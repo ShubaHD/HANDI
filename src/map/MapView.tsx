@@ -166,6 +166,17 @@ export function MapView({
         (canvas.getContext('webgl2') as WebGL2RenderingContext | null) ??
         (canvas.getContext('webgl') as WebGLRenderingContext | null);
       const lost = gl ? (gl as WebGLRenderingContext).isContextLost() : null;
+      const rect = canvas.getBoundingClientRect();
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const cs = window.getComputedStyle(canvas);
+      const cx = Math.round(rect.left + rect.width / 2);
+      const cy = Math.round(rect.top + rect.height / 2);
+      const topEl = document.elementFromPoint(cx, cy);
+      const topElDesc = topEl
+        ? `${topEl.tagName.toLowerCase()}${topEl.id ? `#${topEl.id}` : ''}${
+            (topEl as HTMLElement).className ? `.${String((topEl as HTMLElement).className).split(/\s+/).slice(0, 2).join('.')}` : ''
+          }`
+        : 'n/a';
       let renderer = 'n/a';
       try {
         if (gl) {
@@ -183,8 +194,6 @@ export function MapView({
       } catch {
         /* ignore */
       }
-      const rect = canvas.getBoundingClientRect();
-      const containerRect = containerRef.current?.getBoundingClientRect();
       const layersCount = map.getStyle()?.layers?.length ?? 0;
       const sourcesCount = Object.keys(map.getStyle()?.sources ?? {}).length;
       setMapDebugDetails({
@@ -193,6 +202,8 @@ export function MapView({
           `canvas attr: ${canvas.width}x${canvas.height}`,
           `canvas rect: ${Math.round(rect.width)}x${Math.round(rect.height)}`,
           `container rect: ${containerRect ? `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}` : 'n/a'}`,
+          `canvas css: display=${cs.display} visibility=${cs.visibility} opacity=${cs.opacity}`,
+          `elementFromPoint(center): ${topElDesc}`,
           `webgl: ${gl ? 'ok' : 'MISSING'} contextLost=${lost}`,
           `renderer: ${renderer}`,
           `renders: ${renderTicks}`,
