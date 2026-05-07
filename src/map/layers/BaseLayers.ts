@@ -97,6 +97,11 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
       },
       layers: [
         {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': '#0f172a' },
+        },
+        {
           id: 'base-layer',
           type: 'raster',
           source: 'base',
@@ -118,6 +123,11 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
       },
     },
     layers: [
+      {
+        id: 'background',
+        type: 'background',
+        paint: { 'background-color': '#0f172a' },
+      },
       {
         id: 'base-layer',
         type: 'raster',
