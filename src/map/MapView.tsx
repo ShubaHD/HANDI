@@ -88,6 +88,7 @@ export function MapView({
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [locating, setLocating] = useState(false);
   const [mapDebug, setMapDebug] = useState<{ msg: string } | null>(null);
+  const [mapDebugDetails, setMapDebugDetails] = useState<{ lines: string[] } | null>(null);
 
   const handlersRef = useRef({
     onMapClick,
@@ -153,6 +154,33 @@ export function MapView({
       });
     }, 3500);
 
+    const debugEnabled =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).has('debugMap');
+
+    const updateDebugDetails = () => {
+      if (!debugEnabled) return;
+      const canvas = map.getCanvas();
+      const gl =
+        (canvas.getContext('webgl2') as WebGL2RenderingContext | null) ??
+        (canvas.getContext('webgl') as WebGLRenderingContext | null);
+      const rect = canvas.getBoundingClientRect();
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const layersCount = map.getStyle()?.layers?.length ?? 0;
+      const sourcesCount = Object.keys(map.getStyle()?.sources ?? {}).length;
+      setMapDebugDetails({
+        lines: [
+          `debugMap=1`,
+          `canvas attr: ${canvas.width}x${canvas.height}`,
+          `canvas rect: ${Math.round(rect.width)}x${Math.round(rect.height)}`,
+          `container rect: ${containerRect ? `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}` : 'n/a'}`,
+          `webgl: ${gl ? 'ok' : 'MISSING'}`,
+          `style: layers=${layersCount} sources=${sourcesCount}`,
+          `base source: ${map.getSource('base') ? 'yes' : 'no'}`,
+        ],
+      });
+    };
+
     map.on('error', (e) => {
       // Surface MapLibre issues in production where basemap looks blank.
       console.error('[map] error', e?.error ?? e);
@@ -164,6 +192,7 @@ export function MapView({
       gotIdle = true;
       window.clearTimeout(debugTimer);
       setMapDebug(null);
+      updateDebugDetails();
     });
 
     map.on('load', () => {
@@ -174,6 +203,7 @@ export function MapView({
       requestAnimationFrame(safeResize);
       setTimeout(safeResize, 250);
       setTimeout(safeResize, 1200);
+      setTimeout(updateDebugDetails, 1500);
     });
 
     const onWinResize = () => safeResize();
@@ -391,6 +421,13 @@ export function MapView({
       {mapDebug && (
         <div className="absolute top-3 right-3 z-20 bg-red-900/80 border border-red-700 text-red-100 rounded-xl p-3 max-w-sm text-xs">
           {mapDebug.msg}
+        </div>
+      )}
+      {mapDebugDetails && (
+        <div className="absolute bottom-3 left-3 z-20 bg-slate-950/80 border border-slate-700 text-slate-100 rounded-xl p-3 max-w-sm text-[11px] leading-snug space-y-1">
+          {mapDebugDetails.lines.map((l) => (
+            <div key={l}>{l}</div>
+          ))}
         </div>
       )}
 
