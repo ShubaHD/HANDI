@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from './AuthProvider';
@@ -15,15 +15,15 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('password');
   const [signup, setSignup] = useState(false);
 
-  if (loading) return null;
-  if (session) return <Navigate to="/" replace />;
-
-  const canSubmit = useMemo(() => {
+  const canSubmit = (() => {
     if (!isSupabaseConfigured) return false;
     if (!email.trim()) return false;
     if (mode === 'magic') return true;
     return password.length >= 6;
-  }, [email, password, mode]);
+  })();
+
+  if (loading) return null;
+  if (session) return <Navigate to="/" replace />;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
