@@ -344,7 +344,7 @@ export default function FieldPage() {
           )}
         </aside>
 
-        <main className="flex-1 relative">
+        <main className="flex-1 relative h-full min-h-0">
           <MapView
             points={points}
             zones={zones}

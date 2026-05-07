@@ -458,7 +458,7 @@ export function MapView({
   };
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full min-h-0">
       <div ref={containerRef} className="absolute inset-0" />
 
       {mapDebug && (
