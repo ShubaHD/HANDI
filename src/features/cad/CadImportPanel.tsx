@@ -9,7 +9,7 @@ import {
 } from './api';
 import { classifyCadImport } from './classifyCadLayer';
 import type { ClassifiedCadLayer } from './classifyCadLayer';
-import { parseDxfStereo70Full, type DxfParseDiagnostics } from './dxfImport';
+import { parseDxfStereo70Full, type DxfParseDiagnostics, type Stereo70SourceCrs } from './dxfImport';
 import { ImportWizard } from './ImportWizard';
 import { CavePlansPanel } from '@/features/cavePlans/CavePlansPanel';
 import type { CavePlan } from '@/features/cavePlans/api';
@@ -58,6 +58,7 @@ function formatDxfDiagReport(fileName: string, d: DxfParseDiagnostics): string {
   return [
     'HANDI — raport diagnostic DXF',
     `Fișier: ${fileName}`,
+    `CRS sursă (Stereo70): ${d.sourceCrs}`,
     `Entități în ENTITIES + blocuri (după tip): vezi countsByType`,
     `Total rânduri ENTITIES: ${d.totalEntities}`,
     `Blocuri (definitions): ${d.blocksCount}`,
@@ -72,6 +73,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
+  const [sourceCrs, setSourceCrs] = useState<Stereo70SourceCrs>('EPSG:3844');
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingBusy, setEditingBusy] = useState(false);
   const [editingError, setEditingError] = useState<string | null>(null);
@@ -89,7 +91,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
     setLastDiag(null);
     try {
       const text = await file.text();
-      const parsed = parseDxfStereo70Full(file.name, text);
+      const parsed = parseDxfStereo70Full(file.name, text, { sourceCrs });
 
       if (parsed.layers.length === 0) {
         setLastDiag({ fileName: file.name, d: parsed.diagnostics });
@@ -177,6 +179,37 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
             </p>
           </div>
           <div className="p-3 space-y-2">
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2">
+              <div className="text-[11px] uppercase text-slate-500 mb-1">CRS import (Stereo70)</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSourceCrs('EPSG:3844')}
+                  className={`py-2 rounded-lg text-xs border ${
+                    sourceCrs === 'EPSG:3844'
+                      ? 'bg-brand-600 border-brand-500 text-white'
+                      : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  EPSG:3844 (Stereo70 modern)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceCrs('EPSG:31700')}
+                  className={`py-2 rounded-lg text-xs border ${
+                    sourceCrs === 'EPSG:31700'
+                      ? 'bg-brand-600 border-brand-500 text-white'
+                      : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  EPSG:31700 (Dealul Piscului / Krassovsky)
+                </button>
+              </div>
+              <div className="mt-1 text-[10px] text-slate-500">
+                Dacă ai decalaj ~120m spre Est pe basemap, încearcă EPSG:31700.
+              </div>
+            </div>
+
             <label className="block w-full py-2.5 rounded-lg bg-brand-600/90 hover:bg-brand-600 text-center text-sm font-medium cursor-pointer border border-brand-500">
               {importing ? 'Citesc DXF…' : 'Import DXF multi-layer'}
               <input

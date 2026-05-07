@@ -8,6 +8,13 @@ proj4.defs(
   '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
 );
 
+// Dealul Piscului 1970 / Stereo 70 (deprecated EPSG:31700), commonly used legacy datum (Krassowsky 1940).
+// Parameters from EPSG and widely used PROJ.4 definitions. Accuracy depends on source data.
+proj4.defs(
+  'EPSG:31700',
+  '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=krass +towgs84=28,-121,-77,0,0,0,0 +units=m +no_defs',
+);
+
 type XY = { x: number; y: number; z?: number };
 
 /** 2D affine: world = A * local + t */
@@ -31,6 +38,7 @@ export interface DxfParseDiagnostics {
   explodedFromBlocks: number;
   countsByType: Record<string, number>;
   skippedTypes: string[];
+  sourceCrs: 'EPSG:3844' | 'EPSG:31700';
 }
 
 export interface ParsedDxfImport {
@@ -41,6 +49,8 @@ export interface ParsedDxfImport {
 }
 
 const MAX_INSERT_DEPTH = 5;
+
+export type Stereo70SourceCrs = 'EPSG:3844' | 'EPSG:31700';
 
 const SUPPORTED_TYPES = new Set([
   'LINE',
@@ -58,8 +68,8 @@ const SUPPORTED_TYPES = new Set([
   'SOLID',
 ]);
 
-function stereo70ToWgs84(x: number, y: number): [number, number] {
-  return proj4('EPSG:3844', 'EPSG:4326', [x, y]) as [number, number];
+function stereo70ToWgs84(sourceCrs: Stereo70SourceCrs, x: number, y: number): [number, number] {
+  return proj4(sourceCrs, 'EPSG:4326', [x, y]) as [number, number];
 }
 
 function layerName(e: Record<string, unknown>): string {
@@ -79,8 +89,8 @@ function effectiveLayer(
   return ln;
 }
 
-function toLonLat(xy: XY): [number, number] {
-  return stereo70ToWgs84(xy.x, xy.y);
+function toLonLat(sourceCrs: Stereo70SourceCrs, xy: XY): [number, number] {
+  return stereo70ToWgs84(sourceCrs, xy.x, xy.y);
 }
 
 function degToRad(d: number): number {
@@ -123,17 +133,24 @@ function applyAffine(A: Affine2D | undefined, pt: XY): XY {
 function mapVerticesRaw(
   raw: Array<XY | { x: number; y: number }>,
   A: Affine2D | undefined,
+  sourceCrs: Stereo70SourceCrs,
 ): [number, number][] {
-  return raw.map((p) => toLonLat(applyAffine(A, p as XY))) as [number, number][];
+  return raw.map((p) => toLonLat(sourceCrs, applyAffine(A, p as XY))) as [number, number][];
 }
 
-function sampleCircle(center: XY, radius: number, A: Affine2D | undefined, segments = 32): [number, number][] {
+function sampleCircle(
+  center: XY,
+  radius: number,
+  A: Affine2D | undefined,
+  sourceCrs: Stereo70SourceCrs,
+  segments = 32,
+): [number, number][] {
   const coords: [number, number][] = [];
   for (let i = 0; i <= segments; i++) {
     const a = (i / segments) * Math.PI * 2;
     const x = center.x + radius * Math.cos(a);
     const y = center.y + radius * Math.sin(a);
-    coords.push(toLonLat(applyAffine(A, { x, y })));
+    coords.push(toLonLat(sourceCrs, applyAffine(A, { x, y })));
   }
   return coords;
 }
@@ -144,6 +161,7 @@ function sampleArc(
   startAngle: number,
   endAngle: number,
   A: Affine2D | undefined,
+  sourceCrs: Stereo70SourceCrs,
   segments = 24,
 ): [number, number][] {
   const coords: [number, number][] = [];
@@ -154,7 +172,7 @@ function sampleArc(
     const t = s + ((e - s) * i) / segments;
     const x = center.x + radius * Math.cos(t);
     const y = center.y + radius * Math.sin(t);
-    coords.push(toLonLat(applyAffine(A, { x, y })));
+    coords.push(toLonLat(sourceCrs, applyAffine(A, { x, y })));
   }
   return coords;
 }
@@ -166,6 +184,7 @@ function sampleEllipse(
   startParam: number,
   endParam: number,
   A: Affine2D | undefined,
+  sourceCrs: Stereo70SourceCrs,
   segments = 64,
 ): [number, number][] {
   const dx = majorEnd.x - center.x;
@@ -188,7 +207,7 @@ function sampleEllipse(
     const t = s + ((e - s) * i) / segments;
     const lx = center.x + a * Math.cos(t) * ux + b * Math.sin(t) * vx;
     const ly = center.y + a * Math.cos(t) * uy + b * Math.sin(t) * vy;
-    coords.push(toLonLat(applyAffine(A, { x: lx, y: ly })));
+    coords.push(toLonLat(sourceCrs, applyAffine(A, { x: lx, y: ly })));
   }
   return coords;
 }
@@ -196,13 +215,14 @@ function sampleEllipse(
 function sampleSpline(
   e: Record<string, unknown>,
   A: Affine2D | undefined,
+  sourceCrs: Stereo70SourceCrs,
 ): [number, number][] | null {
   const fit = e.fitPoints as XY[] | undefined;
   const ctrl = e.controlPoints as XY[] | undefined;
   const closed = Boolean(e.closed);
   const pts = fit && fit.length >= 2 ? fit : ctrl && ctrl.length >= 2 ? ctrl : null;
   if (!pts) return null;
-  const ring = pts.map((p) => toLonLat(applyAffine(A, p)));
+  const ring = pts.map((p) => toLonLat(sourceCrs, applyAffine(A, p)));
   if (closed && ring.length >= 3) {
     const first = ring[0];
     const last = ring[ring.length - 1];
@@ -271,10 +291,16 @@ function mergeCounts(a: Record<string, number>, b: Record<string, number>): Reco
 }
 
 /** Parse DXF (Stereo70) into GeoJSON features grouped by CAD layer name. */
-export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedDxfImport {
+export function parseDxfStereo70Full(
+  fileName: string,
+  dxfText: string,
+  opts?: { sourceCrs?: Stereo70SourceCrs },
+): ParsedDxfImport {
   const parser = new DxfParser();
   const dxf = parser.parseSync(dxfText);
   if (!dxf) throw new Error('DXF invalid sau gol');
+
+  const sourceCrs: Stereo70SourceCrs = opts?.sourceCrs ?? 'EPSG:3844';
 
   const byLayer = new Map<string, Feature[]>();
   let explodedFromBlocks = 0;
@@ -316,7 +342,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
     const ln = effectiveLayer(e, insertLayer, lnOverride);
     const type = (e.type as string | undefined)?.toUpperCase();
 
-    const toLL = (pt: XY) => toLonLat(applyAffine(A, pt));
+    const toLL = (pt: XY) => toLonLat(sourceCrs, applyAffine(A, pt));
 
     if (type === 'LINE') {
       const v1 = e.start as XY | undefined;
@@ -333,7 +359,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
     if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
       const raw = polylineVertices(e);
       if (!raw || raw.length < 2) return;
-      const coords = mapVerticesRaw(raw, A);
+      const coords = mapVerticesRaw(raw, A, sourceCrs);
       const closed =
         Boolean((e as { shape?: boolean; closed?: boolean }).shape) ||
         Boolean((e as { closed?: boolean }).closed);
@@ -360,7 +386,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
       const c = e.center as XY | undefined;
       const r = e.radius as number | undefined;
       if (!c || r == null || r <= 0) return;
-      const ring = sampleCircle(c, r, A);
+      const ring = sampleCircle(c, r, A, sourceCrs);
       push(ln, {
         type: 'Feature',
         properties: { entity: 'CIRCLE' },
@@ -375,7 +401,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
       const start = (e.startAngle as number | undefined) ?? (e.angleStart as number | undefined);
       const end = (e.endAngle as number | undefined) ?? (e.angleEnd as number | undefined);
       if (!c || r == null || r <= 0 || start == null || end == null) return;
-      const coords = sampleArc(c, r, degToRad(start), degToRad(end), A);
+      const coords = sampleArc(c, r, degToRad(start), degToRad(end), A, sourceCrs);
       push(ln, {
         type: 'Feature',
         properties: { entity: 'ARC' },
@@ -417,7 +443,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
       if (!c || !maj || ratio == null || ratio <= 0) return;
       const start = (e.startAngle as number | undefined) ?? 0;
       const end = (e.endAngle as number | undefined) ?? Math.PI * 2;
-      const coords = sampleEllipse(c, maj, ratio, start, end, A);
+      const coords = sampleEllipse(c, maj, ratio, start, end, A, sourceCrs);
       push(ln, {
         type: 'Feature',
         properties: { entity: 'ELLIPSE' },
@@ -427,7 +453,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
     }
 
     if (type === 'SPLINE') {
-      const coords = sampleSpline(e, A);
+      const coords = sampleSpline(e, A, sourceCrs);
       if (!coords || coords.length < 2) return;
       push(ln, {
         type: 'Feature',
@@ -440,7 +466,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
     if (type === '3DFACE' || type === 'SOLID') {
       const raw = faceVertices(e);
       if (!raw || raw.length < 3) return;
-      const coords = mapVerticesRaw(raw, A);
+      const coords = mapVerticesRaw(raw, A, sourceCrs);
       if (coords.length >= 4 && isClosedRing(coords)) {
         const ring = [...coords];
         if (!isClosedRing(ring)) ring.push([...ring[0]]);
@@ -526,6 +552,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
     explodedFromBlocks,
     countsByType,
     skippedTypes: Array.from(skippedTypesSet).sort(),
+    sourceCrs,
   };
 
   return {
