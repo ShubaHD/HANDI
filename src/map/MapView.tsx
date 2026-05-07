@@ -480,24 +480,26 @@ export function MapView({
   if (useLeaflet) {
     return (
       <div className="relative h-full w-full min-h-0">
-        <LeafletView
-          base={base}
-          points={points}
-          zones={zones}
-          tracks={tracks}
-          cavePlans={cavePlans}
-          cavePlansVisible={cavePlansVisible}
-          cadLayers={cadLayers}
-          onMapClick={onMapClick}
-          onBoundsChange={onBoundsChange}
-          flyTo={flyTo}
-          fitBounds={fitBounds}
-        />
+        <div className="absolute inset-0 z-0">
+          <LeafletView
+            base={base}
+            points={points}
+            zones={zones}
+            tracks={tracks}
+            cavePlans={cavePlans}
+            cavePlansVisible={cavePlansVisible}
+            cadLayers={cadLayers}
+            onMapClick={onMapClick}
+            onBoundsChange={onBoundsChange}
+            flyTo={flyTo}
+            fitBounds={fitBounds}
+          />
+        </div>
 
-        <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+        <div className="absolute top-3 left-3 z-50 flex flex-col gap-2 pointer-events-auto">
           <button
             onClick={() => setShowSwitcher((v) => !v)}
-            className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-xl shadow-xl px-3 py-2 text-sm font-medium hover:bg-slate-800"
+            className="bg-slate-950/95 backdrop-blur border border-slate-600 rounded-xl shadow-2xl px-3 py-2 text-sm font-semibold hover:bg-slate-800"
             title="Schimba harta"
           >
             {base.label}
@@ -516,6 +518,15 @@ export function MapView({
             />
           )}
         </div>
+
+        <button
+          onClick={locateMe}
+          disabled={locating}
+          className="absolute bottom-24 right-3 z-50 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center text-xs font-bold pointer-events-auto"
+          title="Pozitia mea"
+        >
+          {locating ? '...' : 'GPS'}
+        </button>
       </div>
     );
   }
