@@ -6,6 +6,7 @@ import {
   defaultStyleForKind,
 } from './classifyCadLayer';
 import { uploadCadImport } from './api';
+import type { DxfParseDiagnostics } from './dxfImport';
 
 const KIND_OPTIONS: { value: CadLayerKind; label: string }[] = [
   { value: 'caves', label: 'Peșteri (linii)' },
@@ -22,11 +23,20 @@ interface Props {
   importName: string;
   classified: ClassifiedCadLayer[];
   bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number };
+  diagnostics: DxfParseDiagnostics;
   onCancel: () => void;
   onSaved: () => void;
 }
 
-export function ImportWizard({ file, importName: initialName, classified, bbox, onCancel, onSaved }: Props) {
+export function ImportWizard({
+  file,
+  importName: initialName,
+  classified,
+  bbox,
+  diagnostics,
+  onCancel,
+  onSaved,
+}: Props) {
   const [name, setName] = useState(initialName);
   const [visibility, setVisibility] = useState<Visibility>('club');
   const [busy, setBusy] = useState(false);
@@ -84,6 +94,20 @@ export function ImportWizard({ file, importName: initialName, classified, bbox, 
       <h2 className="font-semibold text-lg">Import DXF (layere CAD)</h2>
       <p className="text-xs text-slate-400">
         Verifica tipul detectat pentru fiecare layer CAD. Poti schimba culoarea, grosimea si opacitatea inainte de salvare.
+      </p>
+
+      <p className="text-[11px] text-slate-500 border border-slate-800 rounded-lg px-2 py-1.5 bg-slate-950/50">
+        Sumar DXF: entități (secțiune + blocuri, după tip) în total{' '}
+        <span className="text-slate-300 font-mono">
+          {Object.values(diagnostics.countsByType).reduce((a, b) => a + b, 0)}
+        </span>
+        {' · '}
+        rânduri ENTITIES: <span className="text-slate-300 font-mono">{diagnostics.totalEntities}</span>
+        {' · '}
+        explodate din blocuri:{' '}
+        <span className="text-slate-300 font-mono">{diagnostics.explodedFromBlocks}</span>
+        {' · '}
+        layere CAD: <span className="text-slate-300 font-mono">{classified.length}</span>
       </p>
 
       <label className="block">

@@ -10,16 +10,53 @@ proj4.defs(
 
 type XY = { x: number; y: number; z?: number };
 
+/** 2D affine: world = A * local + t */
+export type Affine2D = {
+  m11: number;
+  m12: number;
+  m21: number;
+  m22: number;
+  tx: number;
+  ty: number;
+};
+
 export interface CadLayerGroup {
   cadLayer: string;
   features: Feature[];
+}
+
+export interface DxfParseDiagnostics {
+  totalEntities: number;
+  blocksCount: number;
+  explodedFromBlocks: number;
+  countsByType: Record<string, number>;
+  skippedTypes: string[];
 }
 
 export interface ParsedDxfImport {
   name: string;
   layers: CadLayerGroup[];
   bbox4326: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
+  diagnostics: DxfParseDiagnostics;
 }
+
+const MAX_INSERT_DEPTH = 5;
+
+const SUPPORTED_TYPES = new Set([
+  'LINE',
+  'LWPOLYLINE',
+  'POLYLINE',
+  'CIRCLE',
+  'ARC',
+  'TEXT',
+  'MTEXT',
+  'INSERT',
+  'POINT',
+  'ELLIPSE',
+  'SPLINE',
+  '3DFACE',
+  'SOLID',
+]);
 
 function stereo70ToWgs84(x: number, y: number): [number, number] {
   return proj4('EPSG:3844', 'EPSG:4326', [x, y]) as [number, number];
@@ -30,6 +67,18 @@ function layerName(e: Record<string, unknown>): string {
   return String(raw).trim() || '0';
 }
 
+/** Effective layer: AutoCAD rule — layer "0" inside block inherits INSERT layer. */
+function effectiveLayer(
+  e: Record<string, unknown>,
+  insertLayer: string | undefined,
+  lnOverride: string | undefined,
+): string {
+  if (lnOverride != null) return lnOverride;
+  const ln = layerName(e);
+  if (ln === '0' && insertLayer) return insertLayer;
+  return ln;
+}
+
 function toLonLat(xy: XY): [number, number] {
   return stereo70ToWgs84(xy.x, xy.y);
 }
@@ -38,38 +87,65 @@ function degToRad(d: number): number {
   return (d * Math.PI) / 180;
 }
 
-function transformXY(
-  pt: XY,
-  t: { x: number; y: number; sx: number; sy: number; rotRad: number },
-): XY {
-  const x1 = pt.x * t.sx;
-  const y1 = pt.y * t.sy;
+function insertToAffine(t: { x: number; y: number; sx: number; sy: number; rotRad: number }): Affine2D {
   const c = Math.cos(t.rotRad);
   const s = Math.sin(t.rotRad);
-  const xr = x1 * c - y1 * s;
-  const yr = x1 * s + y1 * c;
-  return { x: xr + t.x, y: yr + t.y, z: pt.z };
+  return {
+    m11: t.sx * c,
+    m12: -t.sy * s,
+    m21: t.sx * s,
+    m22: t.sy * c,
+    tx: t.x,
+    ty: t.y,
+  };
 }
 
-function mapVertices(
+function multiplyAffine(parent: Affine2D, child: Affine2D): Affine2D {
+  return {
+    m11: parent.m11 * child.m11 + parent.m12 * child.m21,
+    m12: parent.m11 * child.m12 + parent.m12 * child.m22,
+    m21: parent.m21 * child.m11 + parent.m22 * child.m21,
+    m22: parent.m21 * child.m12 + parent.m22 * child.m22,
+    tx: parent.m11 * child.tx + parent.m12 * child.ty + parent.tx,
+    ty: parent.m21 * child.tx + parent.m22 * child.ty + parent.ty,
+  };
+}
+
+function applyAffine(A: Affine2D | undefined, pt: XY): XY {
+  if (!A) return pt;
+  return {
+    x: A.m11 * pt.x + A.m12 * pt.y + A.tx,
+    y: A.m21 * pt.x + A.m22 * pt.y + A.ty,
+    z: pt.z,
+  };
+}
+
+function mapVerticesRaw(
   raw: Array<XY | { x: number; y: number }>,
-  t: { x: number; y: number; sx: number; sy: number; rotRad: number },
+  A: Affine2D | undefined,
 ): [number, number][] {
-  return raw.map((p) => toLonLat(transformXY(p as XY, t))) as [number, number][];
+  return raw.map((p) => toLonLat(applyAffine(A, p as XY))) as [number, number][];
 }
 
-function sampleCircle(center: XY, radius: number, segments = 32): [number, number][] {
+function sampleCircle(center: XY, radius: number, A: Affine2D | undefined, segments = 32): [number, number][] {
   const coords: [number, number][] = [];
   for (let i = 0; i <= segments; i++) {
     const a = (i / segments) * Math.PI * 2;
     const x = center.x + radius * Math.cos(a);
     const y = center.y + radius * Math.sin(a);
-    coords.push(toLonLat({ x, y }));
+    coords.push(toLonLat(applyAffine(A, { x, y })));
   }
   return coords;
 }
 
-function sampleArc(center: XY, radius: number, startAngle: number, endAngle: number, segments = 24): [number, number][] {
+function sampleArc(
+  center: XY,
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+  A: Affine2D | undefined,
+  segments = 24,
+): [number, number][] {
   const coords: [number, number][] = [];
   let s = startAngle;
   let e = endAngle;
@@ -78,9 +154,88 @@ function sampleArc(center: XY, radius: number, startAngle: number, endAngle: num
     const t = s + ((e - s) * i) / segments;
     const x = center.x + radius * Math.cos(t);
     const y = center.y + radius * Math.sin(t);
-    coords.push(toLonLat({ x, y }));
+    coords.push(toLonLat(applyAffine(A, { x, y })));
   }
   return coords;
+}
+
+function sampleEllipse(
+  center: XY,
+  majorEnd: XY,
+  axisRatio: number,
+  startParam: number,
+  endParam: number,
+  A: Affine2D | undefined,
+  segments = 64,
+): [number, number][] {
+  const dx = majorEnd.x - center.x;
+  const dy = majorEnd.y - center.y;
+  const a = Math.hypot(dx, dy) || 1e-9;
+  const ux = dx / a;
+  const uy = dy / a;
+  const vx = -uy;
+  const vy = ux;
+  const b = axisRatio * a;
+  let s = startParam;
+  let e = endParam;
+  if (Number.isNaN(s) || Number.isNaN(e)) {
+    s = 0;
+    e = Math.PI * 2;
+  }
+  if (e <= s) e += Math.PI * 2;
+  const coords: [number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = s + ((e - s) * i) / segments;
+    const lx = center.x + a * Math.cos(t) * ux + b * Math.sin(t) * vx;
+    const ly = center.y + a * Math.cos(t) * uy + b * Math.sin(t) * vy;
+    coords.push(toLonLat(applyAffine(A, { x: lx, y: ly })));
+  }
+  return coords;
+}
+
+function sampleSpline(
+  e: Record<string, unknown>,
+  A: Affine2D | undefined,
+): [number, number][] | null {
+  const fit = e.fitPoints as XY[] | undefined;
+  const ctrl = e.controlPoints as XY[] | undefined;
+  const closed = Boolean(e.closed);
+  const pts = fit && fit.length >= 2 ? fit : ctrl && ctrl.length >= 2 ? ctrl : null;
+  if (!pts) return null;
+  const ring = pts.map((p) => toLonLat(applyAffine(A, p)));
+  if (closed && ring.length >= 3) {
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
+  }
+  return ring as [number, number][];
+}
+
+function polylineVertices(e: Record<string, unknown>): Array<XY | { x: number; y: number }> | null {
+  const rawPts = e.points as Array<XY | { x: number; y: number }> | undefined;
+  if (Array.isArray(rawPts) && rawPts.length >= 2) return rawPts;
+  const verts = e.vertices as Array<{ x?: number; y?: number }> | undefined;
+  if (!Array.isArray(verts) || verts.length < 2) return null;
+  return verts
+    .map((v) => ({ x: Number(v.x ?? 0), y: Number(v.y ?? 0) }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+}
+
+function faceVertices(e: Record<string, unknown>): XY[] | null {
+  const v3 = e.vertices as IPointLike[] | undefined;
+  if (Array.isArray(v3) && v3.length >= 3) {
+    return v3.map((p) => ({ x: Number(p.x), y: Number(p.y) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  }
+  const solidPts = e.points as IPointLike[] | undefined;
+  if (Array.isArray(solidPts) && solidPts.length >= 3) {
+    return solidPts.map((p) => ({ x: Number(p.x), y: Number(p.y) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  }
+  return null;
+}
+
+interface IPointLike {
+  x: number;
+  y: number;
 }
 
 function isClosedRing(coords: [number, number][], eps = 1e-7): boolean {
@@ -98,6 +253,23 @@ function maybeSimplifyLine(coords: [number, number][], toleranceDeg: number): [n
   return out.geometry.coordinates as [number, number][];
 }
 
+function countEntityTypes(list: Array<Record<string, unknown>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of list) {
+    const t = String((e.type as string | undefined) ?? 'UNKNOWN').toUpperCase();
+    out[t] = (out[t] ?? 0) + 1;
+  }
+  return out;
+}
+
+function mergeCounts(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    out[k] = (out[k] ?? 0) + v;
+  }
+  return out;
+}
+
 /** Parse DXF (Stereo70) into GeoJSON features grouped by CAD layer name. */
 export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedDxfImport {
   const parser = new DxfParser();
@@ -105,6 +277,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
   if (!dxf) throw new Error('DXF invalid sau gol');
 
   const byLayer = new Map<string, Feature[]>();
+  let explodedFromBlocks = 0;
 
   const push = (ln: string, f: Feature) => {
     const arr = byLayer.get(ln) ?? [];
@@ -113,45 +286,54 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
   };
 
   const ents = (dxf.entities ?? []) as unknown as Array<Record<string, unknown>>;
-  const blocksArr = (dxf as unknown as { blocks?: Array<{ name?: string; entities?: unknown[] }> }).blocks ?? [];
+
+  const blocksObj = (dxf.blocks ?? {}) as Record<string, { entities?: unknown[] }>;
   const blocks = new Map<string, Array<Record<string, unknown>>>();
-  for (const b of blocksArr) {
-    const n = String(b.name ?? '').trim();
+  for (const [name, blk] of Object.entries(blocksObj)) {
+    const n = String(name).trim();
     if (!n) continue;
-    const es = (b.entities ?? []) as unknown as Array<Record<string, unknown>>;
+    const es = (blk?.entities ?? []) as unknown as Array<Record<string, unknown>>;
     blocks.set(n, es);
   }
 
+  const blocksCount = blocks.size;
+  let countsByType = countEntityTypes(ents);
+  for (const [, bes] of blocks) {
+    countsByType = mergeCounts(countsByType, countEntityTypes(bes));
+  }
+
+  const skippedTypesSet = new Set<string>();
+
   const pushEntity = (
     e: Record<string, unknown>,
-    lnOverride?: string,
-    transform?: { x: number; y: number; sx: number; sy: number; rotRad: number },
+    lnOverride: string | undefined,
+    A: Affine2D | undefined,
+    insertLayer: string | undefined,
+    fromBlock: boolean,
   ) => {
-    const ln = lnOverride ?? layerName(e);
+    if (fromBlock) explodedFromBlocks += 1;
+
+    const ln = effectiveLayer(e, insertLayer, lnOverride);
     const type = (e.type as string | undefined)?.toUpperCase();
 
-    const toLL = (pt: XY) => toLonLat(transform ? transformXY(pt, transform) : pt);
+    const toLL = (pt: XY) => toLonLat(applyAffine(A, pt));
 
     if (type === 'LINE') {
       const v1 = e.start as XY | undefined;
       const v2 = e.end as XY | undefined;
       if (!v1 || !v2) return;
-      const c1 = toLL(v1);
-      const c2 = toLL(v2);
       push(ln, {
         type: 'Feature',
         properties: { entity: 'LINE' },
-        geometry: { type: 'LineString', coordinates: [c1, c2] },
+        geometry: { type: 'LineString', coordinates: [toLL(v1), toLL(v2)] },
       });
       return;
     }
 
     if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
-      const raw = (e.vertices ?? e.points) as Array<XY | { x: number; y: number }> | undefined;
-      if (!Array.isArray(raw) || raw.length < 2) return;
-      const coords = transform
-        ? mapVertices(raw as Array<XY | { x: number; y: number }>, transform)
-        : (raw.map((p) => toLonLat(p as XY)) as [number, number][]);
+      const raw = polylineVertices(e);
+      if (!raw || raw.length < 2) return;
+      const coords = mapVerticesRaw(raw, A);
       const closed =
         Boolean((e as { shape?: boolean; closed?: boolean }).shape) ||
         Boolean((e as { closed?: boolean }).closed);
@@ -178,8 +360,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
       const c = e.center as XY | undefined;
       const r = e.radius as number | undefined;
       if (!c || r == null || r <= 0) return;
-      const cc = transform ? transformXY(c, transform) : c;
-      const ring = sampleCircle(cc, r * (transform ? Math.max(transform.sx, transform.sy) : 1));
+      const ring = sampleCircle(c, r, A);
       push(ln, {
         type: 'Feature',
         properties: { entity: 'CIRCLE' },
@@ -194,13 +375,7 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
       const start = (e.startAngle as number | undefined) ?? (e.angleStart as number | undefined);
       const end = (e.endAngle as number | undefined) ?? (e.angleEnd as number | undefined);
       if (!c || r == null || r <= 0 || start == null || end == null) return;
-      const cc = transform ? transformXY(c, transform) : c;
-      const coords = sampleArc(
-        cc,
-        r * (transform ? Math.max(transform.sx, transform.sy) : 1),
-        degToRad(start),
-        degToRad(end),
-      );
+      const coords = sampleArc(c, r, degToRad(start), degToRad(end), A);
       push(ln, {
         type: 'Feature',
         properties: { entity: 'ARC' },
@@ -222,29 +397,111 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
       });
       return;
     }
+
+    if (type === 'POINT') {
+      const pos = e.position as XY | undefined;
+      if (!pos) return;
+      const [lon, lat] = toLL(pos);
+      push(ln, {
+        type: 'Feature',
+        properties: { entity: 'POINT' },
+        geometry: { type: 'Point', coordinates: [lon, lat] } as Point,
+      });
+      return;
+    }
+
+    if (type === 'ELLIPSE') {
+      const c = e.center as XY | undefined;
+      const maj = e.majorAxisEndPoint as XY | undefined;
+      const ratio = e.axisRatio as number | undefined;
+      if (!c || !maj || ratio == null || ratio <= 0) return;
+      const start = (e.startAngle as number | undefined) ?? 0;
+      const end = (e.endAngle as number | undefined) ?? Math.PI * 2;
+      const coords = sampleEllipse(c, maj, ratio, start, end, A);
+      push(ln, {
+        type: 'Feature',
+        properties: { entity: 'ELLIPSE' },
+        geometry: { type: 'LineString', coordinates: coords },
+      });
+      return;
+    }
+
+    if (type === 'SPLINE') {
+      const coords = sampleSpline(e, A);
+      if (!coords || coords.length < 2) return;
+      push(ln, {
+        type: 'Feature',
+        properties: { entity: 'SPLINE' },
+        geometry: { type: 'LineString', coordinates: maybeSimplifyLine(coords, 0.00002) },
+      });
+      return;
+    }
+
+    if (type === '3DFACE' || type === 'SOLID') {
+      const raw = faceVertices(e);
+      if (!raw || raw.length < 3) return;
+      const coords = mapVerticesRaw(raw, A);
+      if (coords.length >= 4 && isClosedRing(coords)) {
+        const ring = [...coords];
+        if (!isClosedRing(ring)) ring.push([...ring[0]]);
+        push(ln, {
+          type: 'Feature',
+          properties: { entity: type },
+          geometry: { type: 'Polygon', coordinates: [ring] } as Polygon,
+        });
+      } else if (coords.length >= 3) {
+        const ring = [...coords, coords[0]];
+        push(ln, {
+          type: 'Feature',
+          properties: { entity: type },
+          geometry: { type: 'Polygon', coordinates: [ring] } as Polygon,
+        });
+      }
+      return;
+    }
+
+    if (type && !SUPPORTED_TYPES.has(type)) {
+      skippedTypesSet.add(type);
+    }
+  };
+
+  const explodeInsert = (
+    e: Record<string, unknown>,
+    parentA: Affine2D | undefined,
+    parentInsertLayer: string | undefined,
+    depth: number,
+  ) => {
+    if (depth > MAX_INSERT_DEPTH) return;
+    const pos = (e.position ?? e.start) as XY | undefined;
+    if (!pos) return;
+    const blockName = String((e.name as string | undefined) ?? (e.block as string | undefined) ?? '').trim();
+    const sx = (e.xScale as number | undefined) ?? 1;
+    const sy = (e.yScale as number | undefined) ?? 1;
+    const rot = (e.rotation as number | undefined) ?? 0;
+    const local = insertToAffine({ x: pos.x, y: pos.y, sx: sx || 1, sy: sy || 1, rotRad: degToRad(rot) });
+    const A = parentA ? multiplyAffine(parentA, local) : local;
+    const rawIns = layerName(e);
+    const insLayer = rawIns === '0' && parentInsertLayer ? parentInsertLayer : rawIns;
+    const blockEnts = blockName ? blocks.get(blockName) : undefined;
+    if (blockEnts && blockEnts.length > 0) {
+      for (const be of blockEnts) {
+        const bt = (be.type as string | undefined)?.toUpperCase();
+        if (bt === 'INSERT') {
+          explodeInsert(be, A, insLayer, depth + 1);
+        } else {
+          pushEntity(be, undefined, A, insLayer, true);
+        }
+      }
+    }
   };
 
   for (const e of ents) {
     const type = (e.type as string | undefined)?.toUpperCase();
     if (type === 'INSERT') {
-      const pos = (e.position ?? e.start) as XY | undefined;
-      if (!pos) continue;
-      const blockName = String((e.name as string | undefined) ?? (e.block as string | undefined) ?? '').trim();
-      const sx = (e.xScale as number | undefined) ?? 1;
-      const sy = (e.yScale as number | undefined) ?? 1;
-      const rot = (e.rotation as number | undefined) ?? 0;
-      const t = { x: pos.x, y: pos.y, sx: sx || 1, sy: sy || 1, rotRad: degToRad(rot) };
-      const blockEnts = blockName ? blocks.get(blockName) : undefined;
-      if (blockEnts && blockEnts.length > 0) {
-        for (const be of blockEnts) {
-          // Keep each entity's own layer; apply insert transform.
-          pushEntity(be, undefined, t);
-        }
-        continue;
-      }
+      explodeInsert(e, undefined, undefined, 0);
+      continue;
     }
-
-    pushEntity(e);
+    pushEntity(e, undefined, undefined, undefined, false);
   }
 
   const layers: CadLayerGroup[] = [];
@@ -253,20 +510,29 @@ export function parseDxfStereo70Full(fileName: string, dxfText: string): ParsedD
     layers.push({ cadLayer, features });
   }
 
-  if (layers.length === 0) {
-    throw new Error('DXF nu contine entitati suportate (linii, text, cercuri)');
-  }
+  const fc: FeatureCollection =
+    layers.length > 0
+      ? {
+          type: 'FeatureCollection',
+          features: layers.flatMap((l) => l.features),
+        }
+      : { type: 'FeatureCollection', features: [] };
 
-  const fc: FeatureCollection = {
-    type: 'FeatureCollection',
-    features: layers.flatMap((l) => l.features),
-  };
   const bbox4326 = bboxOfFeatureCollection(fc);
+
+  const diagnostics: DxfParseDiagnostics = {
+    totalEntities: ents.length,
+    blocksCount,
+    explodedFromBlocks,
+    countsByType,
+    skippedTypes: Array.from(skippedTypesSet).sort(),
+  };
 
   return {
     name: fileName.replace(/\.dxf$/i, ''),
     layers,
     bbox4326,
+    diagnostics,
   };
 }
 

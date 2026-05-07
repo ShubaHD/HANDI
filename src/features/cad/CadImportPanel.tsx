@@ -9,7 +9,7 @@ import {
 } from './api';
 import { classifyCadImport } from './classifyCadLayer';
 import type { ClassifiedCadLayer } from './classifyCadLayer';
-import { parseDxfStereo70Full } from './dxfImport';
+import { parseDxfStereo70Full, type DxfParseDiagnostics } from './dxfImport';
 import { ImportWizard } from './ImportWizard';
 import { CavePlansPanel } from '@/features/cavePlans/CavePlansPanel';
 import type { CavePlan } from '@/features/cavePlans/api';
@@ -32,36 +32,81 @@ interface Props {
   onPlansLoaded: (plans: CavePlan[]) => void;
 }
 
+function formatDxfDiagReport(fileName: string, d: DxfParseDiagnostics): string {
+  const lines = Object.entries(d.countsByType)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `  ${k}: ${v}`);
+  return [
+    'HANDI — raport diagnostic DXF',
+    `Fișier: ${fileName}`,
+    `Entități în ENTITIES + blocuri (după tip): vezi countsByType`,
+    `Total rânduri ENTITIES: ${d.totalEntities}`,
+    `Blocuri (definitions): ${d.blocksCount}`,
+    `Entități procesate din explozia blocurilor: ${d.explodedFromBlocks}`,
+    'countsByType:',
+    ...lines,
+    `Tipuri nesuportate (ignorate): ${d.skippedTypes.length ? d.skippedTypes.join(', ') : '—'}`,
+  ].join('\n');
+}
+
 export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onPlansLoaded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
   const [wizard, setWizard] = useState<{
     file: File;
     importName: string;
     classified: ClassifiedCadLayer[];
     bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number };
+    diagnostics: DxfParseDiagnostics;
   } | null>(null);
 
   const onPickDxf = async (file: File) => {
     setImporting(true);
     setError(null);
+    setLastDiag(null);
     try {
       const text = await file.text();
       const parsed = parseDxfStereo70Full(file.name, text);
-      if (!parsed.bbox4326) {
-        throw new Error('Nu pot calcula limitele din DXF (geometrii lipsă?)');
+
+      if (parsed.layers.length === 0) {
+        setLastDiag({ fileName: file.name, d: parsed.diagnostics });
+        setError('Nu s-au găsit entități suportate în DXF. Vezi raportul de diagnostic mai jos.');
+        return;
       }
+
+      if (!parsed.bbox4326) {
+        setLastDiag({ fileName: file.name, d: parsed.diagnostics });
+        setError('Nu pot calcula limitele din DXF (geometrii invalide sau CRS?).');
+        return;
+      }
+
       const classified = classifyCadImport(parsed.layers);
       setWizard({
         file,
         importName: parsed.name,
         classified,
         bbox: parsed.bbox4326,
+        diagnostics: parsed.diagnostics,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Parse DXF eșuat');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const copyDiag = async () => {
+    if (!lastDiag) return;
+    const text = formatDxfDiagReport(lastDiag.fileName, lastDiag.d);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(lastDiag.d, null, 2));
+      } catch {
+        window.prompt('Copiază manual:', text);
+      }
     }
   };
 
@@ -109,6 +154,50 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
               />
             </label>
             {error && <div className="text-xs text-red-300">{error}</div>}
+
+            {lastDiag && (
+              <div className="rounded-lg border border-amber-800/80 bg-amber-950/40 p-3 space-y-2 text-xs">
+                <div className="font-medium text-amber-200">Diagnostic DXF</div>
+                <div className="text-slate-400 space-y-0.5">
+                  <div>
+                    Fișier: <span className="text-slate-200 font-mono">{lastDiag.fileName}</span>
+                  </div>
+                  <div>ENTITIES (rânduri): {lastDiag.d.totalEntities}</div>
+                  <div>Definiții bloc: {lastDiag.d.blocksCount}</div>
+                  <div>Entități explodate din blocuri: {lastDiag.d.explodedFromBlocks}</div>
+                  {lastDiag.d.skippedTypes.length > 0 && (
+                    <div className="text-amber-300/90">
+                      Tipuri ignorate (nesuportate): {lastDiag.d.skippedTypes.join(', ')}
+                    </div>
+                  )}
+                </div>
+                <div className="max-h-28 overflow-y-auto rounded bg-slate-950/80 p-2 font-mono text-[10px] text-slate-400 border border-slate-800">
+                  {Object.entries(lastDiag.d.countsByType)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => (
+                      <div key={k}>
+                        {k}: {v}
+                      </div>
+                    ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700"
+                    onClick={() => void copyDiag()}
+                  >
+                    Copiază raport
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800"
+                    onClick={() => setLastDiag(null)}
+                  >
+                    Închide
+                  </button>
+                </div>
+              </div>
+            )}
 
             {cadImports.length === 0 ? (
               <div className="text-center text-slate-500 text-xs py-4">
@@ -200,6 +289,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
               importName={wizard.importName}
               classified={wizard.classified}
               bbox={wizard.bbox}
+              diagnostics={wizard.diagnostics}
               onCancel={() => setWizard(null)}
               onSaved={() => {
                 setWizard(null);
