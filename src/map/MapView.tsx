@@ -173,6 +173,12 @@ export function MapView({
       const lost = gl ? (gl as WebGLRenderingContext).isContextLost() : null;
       const rect = canvas.getBoundingClientRect();
       const containerRect = containerRef.current?.getBoundingClientRect();
+      const rootEl = document.getElementById('root');
+      const rootRect = rootEl?.getBoundingClientRect();
+      const bodyRect = document.body?.getBoundingClientRect();
+      const htmlRect = document.documentElement?.getBoundingClientRect();
+      const mapEl = containerRef.current?.querySelector('.maplibregl-map') as HTMLElement | null;
+      const mapRect = mapEl?.getBoundingClientRect();
       const cs = window.getComputedStyle(canvas);
       const cx = Math.round(rect.left + rect.width / 2);
       const cy = Math.round(rect.top + rect.height / 2);
@@ -207,6 +213,10 @@ export function MapView({
           `canvas attr: ${canvas.width}x${canvas.height}`,
           `canvas rect: ${Math.round(rect.width)}x${Math.round(rect.height)}`,
           `container rect: ${containerRect ? `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}` : 'n/a'}`,
+          `root rect: ${rootRect ? `${Math.round(rootRect.width)}x${Math.round(rootRect.height)}` : 'n/a'}`,
+          `body rect: ${bodyRect ? `${Math.round(bodyRect.width)}x${Math.round(bodyRect.height)}` : 'n/a'}`,
+          `html rect: ${htmlRect ? `${Math.round(htmlRect.width)}x${Math.round(htmlRect.height)}` : 'n/a'}`,
+          `maplibre div rect: ${mapRect ? `${Math.round(mapRect.width)}x${Math.round(mapRect.height)}` : 'n/a'}`,
           `canvas css: display=${cs.display} visibility=${cs.visibility} opacity=${cs.opacity}`,
           `elementFromPoint(center): ${topElDesc}`,
           `webgl: ${gl ? 'ok' : 'MISSING'} contextLost=${lost}`,
