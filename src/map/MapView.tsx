@@ -89,6 +89,7 @@ export function MapView({
   const [locating, setLocating] = useState(false);
   const [mapDebug, setMapDebug] = useState<{ msg: string } | null>(null);
   const [mapDebugDetails, setMapDebugDetails] = useState<{ lines: string[] } | null>(null);
+  const [renderTicks, setRenderTicks] = useState(0);
 
   const handlersRef = useRef({
     onMapClick,
@@ -164,6 +165,24 @@ export function MapView({
       const gl =
         (canvas.getContext('webgl2') as WebGL2RenderingContext | null) ??
         (canvas.getContext('webgl') as WebGLRenderingContext | null);
+      const lost = gl ? (gl as WebGLRenderingContext).isContextLost() : null;
+      let renderer = 'n/a';
+      try {
+        if (gl) {
+          const dbg = gl.getExtension('WEBGL_debug_renderer_info') as
+            | { UNMASKED_RENDERER_WEBGL: number; UNMASKED_VENDOR_WEBGL: number }
+            | null;
+          if (dbg) {
+            const v = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) as string;
+            const r = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) as string;
+            renderer = `${v} / ${r}`;
+          } else {
+            renderer = String(gl.getParameter(gl.RENDERER));
+          }
+        }
+      } catch {
+        /* ignore */
+      }
       const rect = canvas.getBoundingClientRect();
       const containerRect = containerRef.current?.getBoundingClientRect();
       const layersCount = map.getStyle()?.layers?.length ?? 0;
@@ -174,7 +193,9 @@ export function MapView({
           `canvas attr: ${canvas.width}x${canvas.height}`,
           `canvas rect: ${Math.round(rect.width)}x${Math.round(rect.height)}`,
           `container rect: ${containerRect ? `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}` : 'n/a'}`,
-          `webgl: ${gl ? 'ok' : 'MISSING'}`,
+          `webgl: ${gl ? 'ok' : 'MISSING'} contextLost=${lost}`,
+          `renderer: ${renderer}`,
+          `renders: ${renderTicks}`,
           `style: layers=${layersCount} sources=${sourcesCount}`,
           `base source: ${map.getSource('base') ? 'yes' : 'no'}`,
         ],
@@ -194,6 +215,12 @@ export function MapView({
       setMapDebug(null);
       updateDebugDetails();
     });
+
+    if (debugEnabled) {
+      map.on('render', () => {
+        setRenderTicks((t) => (t < 1000000 ? t + 1 : t));
+      });
+    }
 
     map.on('load', () => {
       installLayers(map);
