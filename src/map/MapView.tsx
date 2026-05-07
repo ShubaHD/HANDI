@@ -77,6 +77,11 @@ export function MapView({
   const drawRef = useRef<TerraDraw | null>(null);
   const [base, setBase] = useState<BaseMapDef>(() => {
     try {
+      const qs = new URLSearchParams(window.location.search);
+      if (qs.has('debugMap')) {
+        // In debug mode, force a known-good basemap to avoid misleading cached selection.
+        return getBaseMapById('maplibre-demo') ?? getDefaultBaseMap();
+      }
       const saved = localStorage.getItem(BASEMAP_KEY);
       return getBaseMapById(saved) ?? getDefaultBaseMap();
     } catch {
