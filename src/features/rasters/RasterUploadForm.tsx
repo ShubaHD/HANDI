@@ -1,0 +1,217 @@
+import { useState, type FormEvent } from 'react';
+import type { RasterKind, Visibility } from '@/lib/types';
+import { uploadRaster, type BBox } from './api';
+
+const KIND_LABELS: Record<RasterKind, string> = {
+  thermal: 'Termal (drona)',
+  lidar_hillshade: 'LIDAR hillshade',
+  orthophoto: 'Ortofoto',
+  other: 'Alt raster',
+};
+
+interface Props {
+  defaultBbox?: BBox | null;
+  onCreated: () => void;
+  onCancel: () => void;
+}
+
+export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState<RasterKind>('thermal');
+  const [file, setFile] = useState<File | null>(null);
+  const [visibility, setVisibility] = useState<Visibility>('club');
+  const [minLon, setMinLon] = useState(defaultBbox ? String(defaultBbox.minLon) : '');
+  const [minLat, setMinLat] = useState(defaultBbox ? String(defaultBbox.minLat) : '');
+  const [maxLon, setMaxLon] = useState(defaultBbox ? String(defaultBbox.maxLon) : '');
+  const [maxLat, setMaxLat] = useState(defaultBbox ? String(defaultBbox.maxLat) : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      setError('Alege un fisier (PNG / JPG)');
+      return;
+    }
+    const bbox: BBox = {
+      minLon: parseFloat(minLon),
+      minLat: parseFloat(minLat),
+      maxLon: parseFloat(maxLon),
+      maxLat: parseFloat(maxLat),
+    };
+    if (
+      !isFinite(bbox.minLon) ||
+      !isFinite(bbox.minLat) ||
+      !isFinite(bbox.maxLon) ||
+      !isFinite(bbox.maxLat)
+    ) {
+      setError('Coordonate invalide');
+      return;
+    }
+    if (bbox.minLon >= bbox.maxLon || bbox.minLat >= bbox.maxLat) {
+      setError('Bounding box invalid (min < max)');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await uploadRaster({
+        name: name.trim() || file.name,
+        kind,
+        file,
+        bbox,
+        visibility,
+      });
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload esuat');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const useDefault = () => {
+    if (!defaultBbox) return;
+    setMinLon(String(defaultBbox.minLon.toFixed(6)));
+    setMinLat(String(defaultBbox.minLat.toFixed(6)));
+    setMaxLon(String(defaultBbox.maxLon.toFixed(6)));
+    setMaxLat(String(defaultBbox.maxLat.toFixed(6)));
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <h2 className="font-semibold">Raster overlay nou</h2>
+
+      <label className="block">
+        <span className="text-xs uppercase text-slate-400">Tip</span>
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as RasterKind)}
+          className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg"
+        >
+          {(Object.keys(KIND_LABELS) as RasterKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABELS[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="text-xs uppercase text-slate-400">Nume</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="ex: Termal Versant Padurea Craiului 2026-04-15"
+          className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
+        />
+      </label>
+
+      <label className="block">
+        <span className="text-xs uppercase text-slate-400">Imagine (PNG / JPG georeferentiat)</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200"
+        />
+      </label>
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs uppercase text-slate-400">Bounding box (lat/lon)</span>
+          {defaultBbox && (
+            <button
+              type="button"
+              onClick={useDefault}
+              className="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
+            >
+              Foloseste viewport-ul curent
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <input
+            type="number"
+            step="any"
+            value={minLat}
+            onChange={(e) => setMinLat(e.target.value)}
+            placeholder="min lat (sud)"
+            className="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded font-mono"
+          />
+          <input
+            type="number"
+            step="any"
+            value={maxLat}
+            onChange={(e) => setMaxLat(e.target.value)}
+            placeholder="max lat (nord)"
+            className="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded font-mono"
+          />
+          <input
+            type="number"
+            step="any"
+            value={minLon}
+            onChange={(e) => setMinLon(e.target.value)}
+            placeholder="min lon (vest)"
+            className="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded font-mono"
+          />
+          <input
+            type="number"
+            step="any"
+            value={maxLon}
+            onChange={(e) => setMaxLon(e.target.value)}
+            placeholder="max lon (est)"
+            className="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded font-mono"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs uppercase text-slate-400 mb-1">Vizibilitate</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setVisibility('club')}
+            className={`px-3 py-2 rounded-lg text-sm border ${
+              visibility === 'club'
+                ? 'bg-brand-600 border-brand-500 text-white'
+                : 'border-slate-700 bg-slate-800 text-slate-300'
+            }`}
+          >
+            Club
+          </button>
+          <button
+            type="button"
+            onClick={() => setVisibility('private')}
+            className={`px-3 py-2 rounded-lg text-sm border ${
+              visibility === 'private'
+                ? 'bg-amber-600 border-amber-500 text-white'
+                : 'border-slate-700 bg-slate-800 text-slate-300'
+            }`}
+          >
+            Privat
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="text-sm text-red-400">{error}</div>}
+
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700"
+        >
+          Anuleaza
+        </button>
+        <button
+          type="submit"
+          disabled={busy || !file}
+          className="flex-1 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-700 font-medium"
+        >
+          {busy ? 'Upload...' : 'Salveaza'}
+        </button>
+      </div>
+    </form>
+  );
+}
