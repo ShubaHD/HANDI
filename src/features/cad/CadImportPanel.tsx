@@ -24,12 +24,31 @@ const CAD_KIND_LABEL: Record<CadLayerRow['kind'], string> = {
   other: 'Altele',
 };
 
+const CAD_KIND_OPTIONS: Array<{ value: CadLayerRow['kind']; label: string }> = [
+  { value: 'caves', label: 'Peșteri (linii)' },
+  { value: 'dolines', label: 'Doline (poligon/linie)' },
+  { value: 'contours', label: 'Curbe nivel' },
+  { value: 'labels', label: 'Etichete / nume' },
+  { value: 'springs', label: 'Izvor' },
+  { value: 'avens', label: 'Aven' },
+  { value: 'other', label: 'Altele' },
+];
+
 interface Props {
   cadImports: CadImport[];
   cadLayers: CadLayerRow[];
   onRefresh: () => void;
   onZoomTo: (bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
   onPlansLoaded: (plans: CavePlan[]) => void;
+}
+
+function cadStyleDefaults(row: CadLayerRow): { color: string; width: number; opacity: number } {
+  const s = row.style as { color?: string; width?: number; opacity?: number };
+  return {
+    color: typeof s?.color === 'string' ? s.color : '#94a3b8',
+    width: typeof s?.width === 'number' ? s.width : 2,
+    opacity: typeof s?.opacity === 'number' ? s.opacity : 0.85,
+  };
 }
 
 function formatDxfDiagReport(fileName: string, d: DxfParseDiagnostics): string {
@@ -53,6 +72,9 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingBusy, setEditingBusy] = useState(false);
+  const [editingError, setEditingError] = useState<string | null>(null);
   const [wizard, setWizard] = useState<{
     file: File;
     importName: string;
@@ -120,6 +142,22 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
   const toggleLayer = async (row: CadLayerRow) => {
     await updateCadLayer(row.id, { visible: !row.visible });
     void onRefresh();
+  };
+
+  const saveLayerStyle = async (
+    row: CadLayerRow,
+    patch: Partial<Pick<CadLayerRow, 'kind' | 'style' | 'visible'>>,
+  ) => {
+    setEditingBusy(true);
+    setEditingError(null);
+    try {
+      await updateCadLayer(row.id, patch);
+      void onRefresh();
+    } catch (e) {
+      setEditingError(e instanceof Error ? e.message : 'Salvare eșuată');
+    } finally {
+      setEditingBusy(false);
+    }
   };
 
   const removeImport = async (imp: CadImport) => {
@@ -245,21 +283,119 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
                         </button>
                       </div>
                       <ul className="border-t border-slate-700/80 divide-y divide-slate-700/80">
-                        {layers.map((row) => (
-                          <li key={row.id} className="flex items-center gap-2 px-2 py-1.5 text-xs">
-                            <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={row.visible}
-                                onChange={() => void toggleLayer(row)}
-                                className="w-3.5 h-3.5 accent-brand-500 shrink-0"
-                              />
-                              <span className="font-mono text-brand-200 truncate">{row.cad_layer}</span>
-                              <span className="text-slate-500 shrink-0">· {CAD_KIND_LABEL[row.kind]}</span>
-                              <span className="text-slate-600 shrink-0">({row.feature_count})</span>
-                            </label>
-                          </li>
-                        ))}
+                        {layers.map((row) => {
+                          const open = editingLayerId === row.id;
+                          const st = cadStyleDefaults(row);
+                          return (
+                            <li key={row.id} className="px-2 py-1.5 text-xs">
+                              <div className="flex items-center gap-2">
+                                <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.visible}
+                                    onChange={() => void toggleLayer(row)}
+                                    className="w-3.5 h-3.5 accent-brand-500 shrink-0"
+                                  />
+                                  <span className="font-mono text-brand-200 truncate">{row.cad_layer}</span>
+                                  <span className="text-slate-500 shrink-0">· {CAD_KIND_LABEL[row.kind]}</span>
+                                  <span className="text-slate-600 shrink-0">({row.feature_count})</span>
+                                </label>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700"
+                                  onClick={() => {
+                                    setEditingError(null);
+                                    setEditingLayerId((cur) => (cur === row.id ? null : row.id));
+                                  }}
+                                  title="Editează stilul layer-ului"
+                                >
+                                  {open ? 'Închide' : 'Edit'}
+                                </button>
+                              </div>
+
+                              {open && (
+                                <div className="mt-2 p-2 rounded-lg bg-slate-900/60 border border-slate-700 space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <label className="text-[11px] text-slate-400">
+                                      Tip
+                                      <select
+                                        className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
+                                        value={row.kind}
+                                        disabled={editingBusy}
+                                        onChange={(e) =>
+                                          void saveLayerStyle(row, { kind: e.target.value as CadLayerRow['kind'] })
+                                        }
+                                      >
+                                        {CAD_KIND_OPTIONS.map((k) => (
+                                          <option key={k.value} value={k.value}>
+                                            {k.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    <label className="text-[11px] text-slate-400">
+                                      Culoare
+                                      <input
+                                        type="color"
+                                        className="mt-1 w-full h-8 rounded border border-slate-700 bg-slate-950"
+                                        defaultValue={st.color}
+                                        disabled={editingBusy}
+                                        onChange={(e) =>
+                                          void saveLayerStyle(row, {
+                                            style: { ...(row.style ?? {}), color: e.target.value },
+                                          })
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-[11px] text-slate-400">
+                                      Grosime
+                                      <input
+                                        type="number"
+                                        min={0.5}
+                                        max={12}
+                                        step={0.5}
+                                        className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
+                                        defaultValue={st.width}
+                                        disabled={editingBusy}
+                                        onChange={(e) =>
+                                          void saveLayerStyle(row, {
+                                            style: { ...(row.style ?? {}), width: parseFloat(e.target.value) },
+                                          })
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-[11px] text-slate-400 col-span-2">
+                                      Opacitate {Math.round(st.opacity * 100)}%
+                                      <input
+                                        type="range"
+                                        min={0.1}
+                                        max={1}
+                                        step={0.05}
+                                        className="mt-1 w-full accent-brand-500"
+                                        defaultValue={st.opacity}
+                                        disabled={editingBusy}
+                                        onChange={(e) =>
+                                          void saveLayerStyle(row, {
+                                            style: { ...(row.style ?? {}), opacity: parseFloat(e.target.value) },
+                                          })
+                                        }
+                                      />
+                                    </label>
+                                  </div>
+
+                                  {editingError && (
+                                    <div className="text-[11px] text-red-300 bg-red-950/30 border border-red-900/60 rounded p-2">
+                                      {editingError}
+                                    </div>
+                                  )}
+                                  <div className="text-[10px] text-slate-500">
+                                    Se salvează automat la schimbare{editingBusy ? '…' : '.'}
+                                  </div>
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </li>
                   );
