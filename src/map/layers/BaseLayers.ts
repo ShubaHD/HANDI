@@ -15,9 +15,19 @@ export interface BaseMapDef {
 
 export const BASE_MAPS: BaseMapDef[] = [
   {
+    id: 'maplibre-demo',
+    label: 'MapLibre Demo',
+    description: 'Basemap test (CORS garantat) – pentru debugging',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Tiles: MapLibre demo',
+    tileUrls: ['https://demotiles.maplibre.org/tiles/tiles/{z}/{x}/{y}.png'],
+    maxzoom: 19,
+    default: true,
+  },
+  {
     id: 'carto-voyager',
     label: 'Carto Voyager',
-    description: 'Basemap rapid, CORS ok (default)',
+    description: 'Basemap rapid, CORS ok',
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     tileUrls: [
@@ -27,7 +37,6 @@ export const BASE_MAPS: BaseMapDef[] = [
       'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
     ],
     maxzoom: 20,
-    default: true,
   },
   {
     id: 'opentopomap',
