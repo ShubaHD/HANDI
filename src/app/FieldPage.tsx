@@ -147,7 +147,7 @@ export default function FieldPage() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="h-screen w-full flex flex-col">
       <header className="flex items-center gap-3 px-3 py-2 bg-slate-950 border-b border-slate-800 z-20">
         <button
           onClick={() => setSidebarOpen((v) => !v)}
