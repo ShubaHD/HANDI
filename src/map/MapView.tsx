@@ -3,7 +3,7 @@ import maplibregl, { Map as MlMap, NavigationControl, ScaleControl } from 'mapli
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { ensurePMTilesProtocol } from '@/lib/pmtiles';
-import { buildBaseStyle, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
+import { buildBaseStyle, getBaseMapById, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
 
 ensurePMTilesProtocol();
 import {
@@ -50,6 +50,7 @@ export interface ViewportState {
 }
 
 const ROMANIA_CENTER: ViewportState = { lng: 22.9, lat: 45.9, zoom: 6 };
+const BASEMAP_KEY = 'handi-basemap';
 
 export function MapView({
   points,
@@ -74,7 +75,14 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
-  const [base, setBase] = useState<BaseMapDef>(() => getDefaultBaseMap());
+  const [base, setBase] = useState<BaseMapDef>(() => {
+    try {
+      const saved = localStorage.getItem(BASEMAP_KEY);
+      return getBaseMapById(saved) ?? getDefaultBaseMap();
+    } catch {
+      return getDefaultBaseMap();
+    }
+  });
   const [hillshadeOn, setHillshadeOn] = useState(false);
   const [hillshadeStrength, setHillshadeStrength] = useState(0.6);
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -196,6 +204,11 @@ export function MapView({
     if (!map) return;
     map.setStyle(buildBaseStyle(base));
     map.once('styledata', () => installLayers(map));
+    try {
+      localStorage.setItem(BASEMAP_KEY, base.id);
+    } catch {
+      /* ignore */
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 

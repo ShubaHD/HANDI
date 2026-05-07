@@ -63,6 +63,11 @@ export const BASE_MAPS: BaseMapDef[] = [
   },
 ];
 
+export function getBaseMapById(id: string | null | undefined): BaseMapDef | null {
+  if (!id) return null;
+  return BASE_MAPS.find((b) => b.id === id) ?? null;
+}
+
 export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
   if (base.pmtiles && base.pmtilesUrl) {
     return {
