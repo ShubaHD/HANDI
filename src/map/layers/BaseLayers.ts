@@ -8,6 +8,8 @@ export interface BaseMapDef {
   tileUrls: string[];
   maxzoom: number;
   default?: boolean;
+  /** If set, use a remote style URL instead of building a raster style locally. */
+  styleUrl?: string;
   /** Daca e setat, sursa va folosi `url: pmtilesUrl` (PMTiles raster), nu `tiles`. */
   pmtiles?: boolean;
   pmtilesUrl?: string;
@@ -22,6 +24,7 @@ export const BASE_MAPS: BaseMapDef[] = [
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Tiles: MapLibre demo',
     tileUrls: ['https://demotiles.maplibre.org/tiles/tiles/{z}/{x}/{y}.png'],
     maxzoom: 19,
+    styleUrl: 'https://demotiles.maplibre.org/style.json',
     default: true,
   },
   {

@@ -129,7 +129,7 @@ export function MapView({
     const last = readLastViewport();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: buildBaseStyle(base),
+      style: base.styleUrl ?? buildBaseStyle(base),
       center: [last.lng, last.lat],
       zoom: last.zoom,
       attributionControl: { compact: true },
@@ -276,7 +276,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(buildBaseStyle(base));
+    map.setStyle(base.styleUrl ?? buildBaseStyle(base));
     map.once('styledata', () => installLayers(map));
     try {
       localStorage.setItem(BASEMAP_KEY, base.id);
