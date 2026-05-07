@@ -3,23 +3,17 @@ import { Navigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from './AuthProvider';
 
-type Mode = 'password' | 'magic';
-
 export default function LoginPage() {
   const { session, loading } = useAuth();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>('password');
-  const [signup, setSignup] = useState(false);
 
   const canSubmit = (() => {
     if (!isSupabaseConfigured) return false;
     if (!email.trim()) return false;
-    if (mode === 'magic') return true;
-    return password.length >= 6;
+    return true;
   })();
 
   if (loading) return null;
@@ -31,26 +25,17 @@ export default function LoginPage() {
     setBusy(true);
     const trimmedEmail = email.trim();
 
-    const res =
-      mode === 'magic'
-        ? await supabase.auth.signInWithOtp({
-            email: trimmedEmail,
-            options: { emailRedirectTo: window.location.origin },
-          })
-        : signup
-          ? await supabase.auth.signUp({
-              email: trimmedEmail,
-              password,
-              options: { emailRedirectTo: window.location.origin },
-            })
-          : await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
+    const res = await supabase.auth.signInWithOtp({
+      email: trimmedEmail,
+      options: { emailRedirectTo: window.location.origin },
+    });
 
     setBusy(false);
     if (res.error) {
       setError(res.error.message);
       return;
     }
-    if (mode === 'magic') setSent(true);
+    setSent(true);
   };
 
   return (
@@ -90,31 +75,6 @@ export default function LoginPage() {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setMode('password')}
-                className={`py-2 rounded-lg text-sm border ${
-                  mode === 'password'
-                    ? 'bg-brand-600 border-brand-500 text-white'
-                    : 'border-slate-700 bg-slate-800'
-                }`}
-              >
-                Parola
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('magic')}
-                className={`py-2 rounded-lg text-sm border ${
-                  mode === 'magic'
-                    ? 'bg-brand-600 border-brand-500 text-white'
-                    : 'border-slate-700 bg-slate-800'
-                }`}
-              >
-                Link magic
-              </button>
-            </div>
-
             <label className="block">
               <span className="text-sm text-slate-300">Email</span>
               <input
@@ -128,53 +88,18 @@ export default function LoginPage() {
               />
             </label>
 
-            {mode === 'password' && (
-              <label className="block">
-                <span className="text-sm text-slate-300">Parola</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete={signup ? 'new-password' : 'current-password'}
-                  className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
-                  placeholder="minim 6 caractere"
-                />
-              </label>
-            )}
-
             {error && <div className="text-sm text-red-400">{error}</div>}
             <button
               type="submit"
               disabled={busy || !canSubmit}
               className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-700 disabled:text-slate-400 font-medium transition"
             >
-              {mode === 'magic'
-                ? busy
-                  ? 'Se trimite...'
-                  : 'Trimite link magic'
-                : signup
-                  ? busy
-                    ? 'Creez cont...'
-                    : 'Creeaza cont'
-                  : busy
-                    ? 'Intru...'
-                    : 'Intra'}
+              {busy ? 'Se trimite...' : 'Trimite link magic'}
             </button>
 
-            {mode === 'password' ? (
-              <button
-                type="button"
-                className="w-full text-xs text-slate-400 hover:text-white pt-1"
-                onClick={() => setSignup((v) => !v)}
-              >
-                {signup ? 'Am deja cont' : 'Creeaza cont nou'}
-              </button>
-            ) : (
-              <p className="text-xs text-slate-500 text-center pt-2">
-                Fara parola - primesti un link prin email.
-              </p>
-            )}
+            <p className="text-xs text-slate-500 text-center pt-2">
+              Fara parola - primesti un link prin email.
+            </p>
           </form>
         )}
       </div>
