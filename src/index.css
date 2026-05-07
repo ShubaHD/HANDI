@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'maplibre-gl/dist/maplibre-gl.css';
+@import 'leaflet/dist/leaflet.css';
 
 @theme {
   --color-brand-50: #f0fdf4;

@@ -4,6 +4,7 @@ import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { ensurePMTilesProtocol } from '@/lib/pmtiles';
 import { buildBaseStyle, getBaseMapById, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
+import { LeafletView } from './LeafletView';
 
 ensurePMTilesProtocol();
 import {
@@ -470,6 +471,54 @@ export function MapView({
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
+
+  const forceMaplibre =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('maplibre');
+  const useLeaflet = !forceMaplibre;
+
+  if (useLeaflet) {
+    return (
+      <div className="relative h-full w-full min-h-0">
+        <LeafletView
+          base={base}
+          points={points}
+          zones={zones}
+          tracks={tracks}
+          cavePlans={cavePlans}
+          cavePlansVisible={cavePlansVisible}
+          cadLayers={cadLayers}
+          onMapClick={onMapClick}
+          onBoundsChange={onBoundsChange}
+          flyTo={flyTo}
+          fitBounds={fitBounds}
+        />
+
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+          <button
+            onClick={() => setShowSwitcher((v) => !v)}
+            className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-xl shadow-xl px-3 py-2 text-sm font-medium hover:bg-slate-800"
+            title="Schimba harta"
+          >
+            {base.label}
+          </button>
+          {showSwitcher && (
+            <BaseMapSwitcher
+              current={base.id}
+              onChange={(b) => {
+                setBase(b);
+                setShowSwitcher(false);
+              }}
+              hillshadeOn={hillshadeOn}
+              onToggleHillshade={setHillshadeOn}
+              hillshadeStrength={hillshadeStrength}
+              onChangeHillshadeStrength={setHillshadeStrength}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-full w-full min-h-0">
