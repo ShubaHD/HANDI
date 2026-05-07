@@ -87,6 +87,7 @@ export function MapView({
   const [hillshadeStrength, setHillshadeStrength] = useState(0.6);
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [mapDebug, setMapDebug] = useState<{ msg: string } | null>(null);
 
   const handlersRef = useRef({
     onMapClick,
@@ -142,6 +143,28 @@ export function MapView({
         /* ignore */
       }
     };
+
+    let gotIdle = false;
+    const debugTimer = window.setTimeout(() => {
+      if (gotIdle) return;
+      const canvas = map.getCanvas();
+      setMapDebug({
+        msg: `Basemap nu a randat (idle) in timp util. Canvas ${canvas?.width ?? 0}x${canvas?.height ?? 0}. Verifica WebGL / CORS in Console.`,
+      });
+    }, 3500);
+
+    map.on('error', (e) => {
+      // Surface MapLibre issues in production where basemap looks blank.
+      console.error('[map] error', e?.error ?? e);
+      const err = (e as unknown as { error?: { message?: string } }).error?.message;
+      if (err) setMapDebug({ msg: `Map error: ${err}` });
+    });
+
+    map.on('idle', () => {
+      gotIdle = true;
+      window.clearTimeout(debugTimer);
+      setMapDebug(null);
+    });
 
     map.on('load', () => {
       installLayers(map);
@@ -213,6 +236,7 @@ export function MapView({
       drawRef.current?.stop();
       drawRef.current = null;
       window.removeEventListener('resize', onWinResize);
+      window.clearTimeout(debugTimer);
       map.remove();
       mapRef.current = null;
     };
@@ -363,6 +387,12 @@ export function MapView({
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="absolute inset-0" />
+
+      {mapDebug && (
+        <div className="absolute top-3 right-3 z-20 bg-red-900/80 border border-red-700 text-red-100 rounded-xl p-3 max-w-sm text-xs">
+          {mapDebug.msg}
+        </div>
+      )}
 
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
         <button
