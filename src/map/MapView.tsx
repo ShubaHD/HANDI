@@ -94,7 +94,7 @@ export function MapView({
   const [locating, setLocating] = useState(false);
   const [mapDebug, setMapDebug] = useState<{ msg: string } | null>(null);
   const [mapDebugDetails, setMapDebugDetails] = useState<{ lines: string[] } | null>(null);
-  const [renderTicks, setRenderTicks] = useState(0);
+  const renderTicksRef = useRef(0);
 
   const handlersRef = useRef({
     onMapClick,
@@ -177,8 +177,11 @@ export function MapView({
       const rootRect = rootEl?.getBoundingClientRect();
       const bodyRect = document.body?.getBoundingClientRect();
       const htmlRect = document.documentElement?.getBoundingClientRect();
-      const mapEl = containerRef.current?.querySelector('.maplibregl-map') as HTMLElement | null;
-      const mapRect = mapEl?.getBoundingClientRect();
+      const containerIsMaplibre =
+        containerRef.current?.classList?.contains('maplibregl-map') ?? false;
+      const mapRect = containerIsMaplibre
+        ? containerRef.current?.getBoundingClientRect()
+        : null;
       const cs = window.getComputedStyle(canvas);
       const cx = Math.round(rect.left + rect.width / 2);
       const cy = Math.round(rect.top + rect.height / 2);
@@ -216,12 +219,13 @@ export function MapView({
           `root rect: ${rootRect ? `${Math.round(rootRect.width)}x${Math.round(rootRect.height)}` : 'n/a'}`,
           `body rect: ${bodyRect ? `${Math.round(bodyRect.width)}x${Math.round(bodyRect.height)}` : 'n/a'}`,
           `html rect: ${htmlRect ? `${Math.round(htmlRect.width)}x${Math.round(htmlRect.height)}` : 'n/a'}`,
-          `maplibre div rect: ${mapRect ? `${Math.round(mapRect.width)}x${Math.round(mapRect.height)}` : 'n/a'}`,
+          `container has .maplibregl-map: ${containerIsMaplibre ? 'yes' : 'no'}`,
+          `maplibre rect: ${mapRect ? `${Math.round(mapRect.width)}x${Math.round(mapRect.height)}` : 'n/a'}`,
           `canvas css: display=${cs.display} visibility=${cs.visibility} opacity=${cs.opacity}`,
           `elementFromPoint(center): ${topElDesc}`,
           `webgl: ${gl ? 'ok' : 'MISSING'} contextLost=${lost}`,
           `renderer: ${renderer}`,
-          `renders: ${renderTicks}`,
+          `renders: ${renderTicksRef.current}`,
           `style: layers=${layersCount} sources=${sourcesCount}`,
           `base source: ${map.getSource('base') ? 'yes' : 'no'}`,
         ],
@@ -244,7 +248,7 @@ export function MapView({
 
     if (debugEnabled) {
       map.on('render', () => {
-        setRenderTicks((t) => (t < 1000000 ? t + 1 : t));
+        if (renderTicksRef.current < 1_000_000) renderTicksRef.current += 1;
       });
     }
 
