@@ -15,9 +15,24 @@ export interface BaseMapDef {
 
 export const BASE_MAPS: BaseMapDef[] = [
   {
+    id: 'carto-voyager',
+    label: 'Carto Voyager',
+    description: 'Basemap rapid, CORS ok (default)',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    tileUrls: [
+      'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+      'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+      'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+      'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+    ],
+    maxzoom: 20,
+    default: true,
+  },
+  {
     id: 'opentopomap',
     label: 'OpenTopoMap',
-    description: 'Topografic - curbe nivel + relief (default pentru speologie)',
+    description: 'Topografic - curbe nivel + relief (poate fi blocat de unele browsere/CORS)',
     attribution:
       'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
     tileUrls: [
@@ -26,7 +41,6 @@ export const BASE_MAPS: BaseMapDef[] = [
       'https://c.tile.opentopomap.org/{z}/{x}/{y}.png',
     ],
     maxzoom: 17,
-    default: true,
   },
   {
     id: 'esri-sat',
