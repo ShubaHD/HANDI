@@ -135,7 +135,26 @@ export function MapView({
     map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left');
 
-    map.on('load', () => installLayers(map));
+    const safeResize = () => {
+      try {
+        map.resize();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    map.on('load', () => {
+      installLayers(map);
+      // Some browsers / PWA + sidebar layouts can initialize with a wrong canvas size.
+      // Force a few resizes to ensure the raster base renders.
+      safeResize();
+      requestAnimationFrame(safeResize);
+      setTimeout(safeResize, 250);
+      setTimeout(safeResize, 1200);
+    });
+
+    const onWinResize = () => safeResize();
+    window.addEventListener('resize', onWinResize);
 
     map.on('moveend', () => {
       const c = map.getCenter();
@@ -193,6 +212,7 @@ export function MapView({
     return () => {
       drawRef.current?.stop();
       drawRef.current = null;
+      window.removeEventListener('resize', onWinResize);
       map.remove();
       mapRef.current = null;
     };
