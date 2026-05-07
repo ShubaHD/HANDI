@@ -5,6 +5,37 @@ import type { BaseMapDef } from './layers/BaseLayers';
 import type { CavePlan } from '@/features/cavePlans/api';
 import type { CadLayerRow } from '@/features/cad/api';
 
+interface ViewportState {
+  lng: number;
+  lat: number;
+  zoom: number;
+}
+
+const VIEWPORT_KEY = 'handi-viewport';
+const DEFAULT_VIEW: ViewportState = { lng: 22.9, lat: 45.9, zoom: 6 };
+
+function readLastViewport(): ViewportState {
+  try {
+    const raw = localStorage.getItem(VIEWPORT_KEY);
+    if (!raw) return DEFAULT_VIEW;
+    const v = JSON.parse(raw) as ViewportState;
+    if (typeof v.lng !== 'number' || typeof v.lat !== 'number' || typeof v.zoom !== 'number') {
+      return DEFAULT_VIEW;
+    }
+    return v;
+  } catch {
+    return DEFAULT_VIEW;
+  }
+}
+
+function writeLastViewport(v: ViewportState) {
+  try {
+    localStorage.setItem(VIEWPORT_KEY, JSON.stringify(v));
+  } catch {
+    /* ignore */
+  }
+}
+
 interface Props {
   base: BaseMapDef;
   points: PointOfInterest[];
@@ -104,10 +135,13 @@ export function LeafletView({
     });
     mapRef.current = map;
 
-    map.setView([45.9, 22.9], 6);
+    const last = readLastViewport();
+    map.setView([last.lat, last.lng], last.zoom);
 
     map.on('click', (e) => onMapClick?.(e.latlng.lng, e.latlng.lat));
     map.on('moveend', () => {
+      const c = map.getCenter();
+      writeLastViewport({ lng: c.lng, lat: c.lat, zoom: map.getZoom() });
       const b = map.getBounds();
       onBoundsChange?.({
         minLon: b.getWest(),

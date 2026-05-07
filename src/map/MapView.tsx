@@ -97,6 +97,15 @@ export function MapView({
   const [mapDebugDetails, setMapDebugDetails] = useState<{ lines: string[] } | null>(null);
   const renderTicksRef = useRef(0);
 
+  // Persist basemap selection for both Leaflet and MapLibre modes
+  useEffect(() => {
+    try {
+      localStorage.setItem(BASEMAP_KEY, base.id);
+    } catch {
+      /* ignore */
+    }
+  }, [base.id]);
+
   const handlersRef = useRef({
     onMapClick,
     onPointClick,
@@ -336,11 +345,6 @@ export function MapView({
     if (!map) return;
     map.setStyle(base.styleUrl ?? buildBaseStyle(base));
     map.once('styledata', () => installLayers(map));
-    try {
-      localStorage.setItem(BASEMAP_KEY, base.id);
-    } catch {
-      /* ignore */
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
