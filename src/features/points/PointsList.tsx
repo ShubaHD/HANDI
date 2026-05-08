@@ -11,6 +11,8 @@ interface Props {
 export function PointsList({ points, onSelect, onChanged }: Props) {
   const [filter, setFilter] = useState<PointType | 'all'>('all');
   const [query, setQuery] = useState('');
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   const filtered = useMemo(() => {
     return points
@@ -31,6 +33,33 @@ export function PointsList({ points, onSelect, onChanged }: Props) {
     }
   };
 
+  const removeAllOfType = async (type: PointType) => {
+    const toDelete = points.filter((p) => p.type === type);
+    if (toDelete.length === 0) return;
+    if (
+      !confirm(
+        `Ștergi TOATE punctele de tip „${POINT_TYPES.find((t) => t.value === type)?.label ?? type}”? (${toDelete.length} buc.)`,
+      )
+    )
+      return;
+
+    setBulkDeleting(true);
+    setBulkProgress({ done: 0, total: toDelete.length });
+    try {
+      for (let i = 0; i < toDelete.length; i++) {
+        await safeDeletePoint(toDelete[i].id);
+        setBulkProgress({ done: i + 1, total: toDelete.length });
+      }
+      onChanged();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Eroare la stergere in bulk');
+      onChanged();
+    } finally {
+      setBulkDeleting(false);
+      setBulkProgress(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 border-b border-slate-700 space-y-2">
@@ -40,6 +69,17 @@ export function PointsList({ points, onSelect, onChanged }: Props) {
           placeholder="Cauta..."
           className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:border-brand-500"
         />
+        {filter !== 'all' && (
+          <button
+            onClick={() => void removeAllOfType(filter)}
+            disabled={bulkDeleting}
+            className="w-full px-3 py-1.5 rounded-lg text-sm border transition bg-red-900/30 border-red-800 text-red-200 hover:bg-red-900/45 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {bulkDeleting && bulkProgress
+              ? `Șterg… (${bulkProgress.done}/${bulkProgress.total})`
+              : 'Șterge toate punctele din tipul selectat'}
+          </button>
+        )}
         <div className="flex flex-wrap gap-1">
           <FilterChip
             label="Toate"
