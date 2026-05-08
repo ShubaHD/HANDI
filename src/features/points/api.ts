@@ -46,6 +46,30 @@ export async function createPoint(input: NewPointInput): Promise<PointOfInterest
   return data as PointOfInterest;
 }
 
+export async function createPointsBulk(inputs: NewPointInput[]): Promise<PointOfInterest[]> {
+  if (inputs.length === 0) return [];
+
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr) throw userErr;
+  const userId = userData.user?.id;
+  if (!userId) throw new Error('Trebuie sa fii autentificat');
+
+  const rows = inputs.map((p) => ({
+    owner_id: userId,
+    name: p.name,
+    type: p.type,
+    lat: p.lat,
+    lon: p.lon,
+    elevation_m: p.elevation_m ?? null,
+    description: p.description ?? null,
+    visibility: p.visibility,
+  }));
+
+  const { data, error } = await supabase.from('points').insert(rows).select();
+  if (error) throw error;
+  return (data ?? []) as PointOfInterest[];
+}
+
 export async function deletePoint(id: string): Promise<void> {
   const { error } = await supabase.from('points').delete().eq('id', id);
   if (error) throw error;

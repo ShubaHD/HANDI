@@ -72,6 +72,14 @@ function stereo70ToWgs84(sourceCrs: Stereo70SourceCrs, x: number, y: number): [n
   return proj4(sourceCrs, 'EPSG:4326', [x, y]) as [number, number];
 }
 
+export function stereo70XYToWgs84(
+  sourceCrs: Stereo70SourceCrs,
+  xy: { x: number; y: number },
+): { lon: number; lat: number } {
+  const [lon, lat] = stereo70ToWgs84(sourceCrs, xy.x, xy.y);
+  return { lon, lat };
+}
+
 function layerName(e: Record<string, unknown>): string {
   const raw = (e.layer as string | undefined) ?? '0';
   return String(raw).trim() || '0';

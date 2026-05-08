@@ -13,6 +13,8 @@ import { parseDxfStereo70Full, type DxfParseDiagnostics, type Stereo70SourceCrs 
 import { ImportWizard } from './ImportWizard';
 import { CavePlansPanel } from '@/features/cavePlans/CavePlansPanel';
 import type { CavePlan } from '@/features/cavePlans/api';
+import { createPointsBulk } from '@/features/points/api';
+import { parsePointsCsvToInputs } from '@/features/points/csvImport';
 
 const CAD_KIND_LABEL: Record<CadLayerRow['kind'], string> = {
   caves: 'Peșteri',
@@ -74,6 +76,8 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
   const [importing, setImporting] = useState(false);
   const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
   const [sourceCrs, setSourceCrs] = useState<Stereo70SourceCrs>('EPSG:3844');
+  const [importingPoints, setImportingPoints] = useState(false);
+  const [pointsMsg, setPointsMsg] = useState<string | null>(null);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingBusy, setEditingBusy] = useState(false);
   const [editingError, setEditingError] = useState<string | null>(null);
@@ -117,6 +121,38 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
       setError(e instanceof Error ? e.message : 'Parse DXF eșuat');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const onPickPointsCsv = async (file: File) => {
+    setImportingPoints(true);
+    setPointsMsg(null);
+    setError(null);
+    try {
+      const csvText = await file.text();
+      const { inputs, diag } = parsePointsCsvToInputs({
+        csvText,
+        sourceCrs,
+        defaultType: 'other',
+        defaultVisibility: 'club',
+      });
+
+      if (diag.errors.length) {
+        setPointsMsg(diag.errors.join(' '));
+        return;
+      }
+      if (inputs.length === 0) {
+        setPointsMsg('Nu am găsit rânduri valide în CSV.');
+        return;
+      }
+
+      await createPointsBulk(inputs);
+      setPointsMsg(`Import OK: ${inputs.length} puncte create (sărite: ${diag.skipped}).`);
+      onRefresh();
+    } catch (e) {
+      setPointsMsg(e instanceof Error ? e.message : 'Import CSV eșuat');
+    } finally {
+      setImportingPoints(false);
     }
   };
 
@@ -224,6 +260,21 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
                 }}
               />
             </label>
+            <label className="block w-full py-2.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-center text-sm font-medium cursor-pointer border border-slate-700">
+              {importingPoints ? 'Citesc CSV…' : 'Import puncte CSV (name + x/y sau lon/lat)'}
+              <input
+                type="file"
+                accept=".csv,text/csv,text/plain"
+                hidden
+                disabled={importingPoints}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onPickPointsCsv(f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {pointsMsg && <div className="text-xs text-slate-300">{pointsMsg}</div>}
             {error && <div className="text-xs text-red-300">{error}</div>}
 
             {lastDiag && (
