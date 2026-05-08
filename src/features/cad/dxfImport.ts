@@ -97,6 +97,29 @@ function degToRad(d: number): number {
   return (d * Math.PI) / 180;
 }
 
+function asXY(v: unknown): XY | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as { x?: unknown; y?: unknown; z?: unknown };
+  const x = Number(o.x);
+  const y = Number(o.y);
+  const z = o.z == null ? undefined : Number(o.z);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+  return { x, y, z: Number.isFinite(z) ? z : undefined };
+}
+
+function entityPosition(e: Record<string, unknown>): XY | undefined {
+  return (
+    asXY(e.start) ??
+    asXY(e.position) ??
+    asXY(e.point) ??
+    asXY(e.startPoint) ??
+    asXY(e.insert) ??
+    asXY(e.alignPoint) ??
+    asXY(e.firstAlignmentPoint) ??
+    asXY(e.secondAlignmentPoint)
+  );
+}
+
 function decodeDxfText(s: string): string {
   // Common DXF TEXT escapes (esp. from ODA/AutoCAD exports)
   return String(s ?? '')
@@ -388,7 +411,9 @@ export function parseDxfStereo70Full(
     const n = String(name).trim();
     if (!n) continue;
     const es = (blk?.entities ?? []) as unknown as Array<Record<string, unknown>>;
+    // Normalize for lookups: some parsers/exporters differ in case.
     blocks.set(n, es);
+    blocks.set(n.toUpperCase(), es);
   }
 
   const blocksCount = blocks.size;
@@ -480,7 +505,7 @@ export function parseDxfStereo70Full(
     }
 
     if (type === 'TEXT' || type === 'MTEXT') {
-      const pos = (e.start ?? e.position ?? e.point) as XY | undefined;
+      const pos = entityPosition(e);
       const raw = String((e.text as string | undefined) ?? '');
       const text = type === 'MTEXT' ? decodeMText(raw) : decodeDxfText(raw);
       if (!pos || !text) return;
@@ -567,9 +592,10 @@ export function parseDxfStereo70Full(
     depth: number,
   ) => {
     if (depth > MAX_INSERT_DEPTH) return;
-    const pos = (e.position ?? e.start) as XY | undefined;
+    const pos = entityPosition(e);
     if (!pos) return;
-    const blockName = String((e.name as string | undefined) ?? (e.block as string | undefined) ?? '').trim();
+    const blockName = String((e.name as string | undefined) ?? (e.block as string | undefined) ?? (e.blockName as string | undefined) ?? '')
+      .trim();
     const sx = (e.xScale as number | undefined) ?? 1;
     const sy = (e.yScale as number | undefined) ?? 1;
     const rot = (e.rotation as number | undefined) ?? 0;
@@ -577,7 +603,7 @@ export function parseDxfStereo70Full(
     const A = parentA ? multiplyAffine(parentA, local) : local;
     const rawIns = layerName(e);
     const insLayer = rawIns === '0' && parentInsertLayer ? parentInsertLayer : rawIns;
-    const blockEnts = blockName ? blocks.get(blockName) : undefined;
+    const blockEnts = blockName ? (blocks.get(blockName) ?? blocks.get(blockName.toUpperCase())) : undefined;
     if (blockEnts && blockEnts.length > 0) {
       for (const be of blockEnts) {
         const bt = (be.type as string | undefined)?.toUpperCase();
