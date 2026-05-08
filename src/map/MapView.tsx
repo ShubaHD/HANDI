@@ -130,6 +130,20 @@ export function MapView({
     updateCadLayersOnMap(map, cadLayers);
   };
 
+  const ensureInputsEnabled = (map: MlMap) => {
+    try {
+      map.scrollZoom.enable();
+      map.dragPan.enable();
+      map.dragRotate.enable();
+      map.doubleClickZoom.enable();
+      map.keyboard.enable();
+      map.boxZoom.enable();
+      map.touchZoomRotate.enable();
+    } catch {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     if (!containerRef.current) return;
     const last = readLastViewport();
@@ -273,6 +287,7 @@ export function MapView({
     }
 
     map.on('load', () => {
+      ensureInputsEnabled(map);
       installLayers(map);
       // Some browsers / PWA + sidebar layouts can initialize with a wrong canvas size.
       // Force a few resizes to ensure the raster base renders.
@@ -359,7 +374,10 @@ export function MapView({
     const map = mapRef.current;
     if (!map) return;
     map.setStyle(base.styleUrl ?? buildBaseStyle(base));
-    map.once('styledata', () => installLayers(map));
+    map.once('styledata', () => {
+      ensureInputsEnabled(map);
+      installLayers(map);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
