@@ -85,7 +85,7 @@ export function PointForm({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="ex: P. Ungurului - intrare"
+          placeholder="ex: Avenul Răchițeaua"
           className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
         />
       </label>

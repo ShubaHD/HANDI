@@ -1,8 +1,9 @@
-import type { PointOfInterest, Track, Zone } from '@/lib/types';
+import type { Annotation, PointOfInterest, Track, Zone } from '@/lib/types';
 import { db } from './dexie';
 import { fetchPoints as fetchPointsRemote } from '@/features/points/api';
 import { fetchZones as fetchZonesRemote } from '@/features/zones/api';
 import { fetchTracks as fetchTracksRemote } from '@/features/tracks/api';
+import { fetchAnnotations as fetchAnnotationsRemote } from '@/features/annotations/api';
 
 export interface CachedFetchResult<T> {
   data: T[];
@@ -12,7 +13,7 @@ export interface CachedFetchResult<T> {
 
 async function safeFetch<T>(
   remote: () => Promise<T[]>,
-  table: 'points' | 'zones' | 'tracks',
+  table: 'points' | 'zones' | 'tracks' | 'annotations',
 ): Promise<CachedFetchResult<T>> {
   try {
     const fresh = await remote();
@@ -45,6 +46,10 @@ export function fetchZonesCached(): Promise<CachedFetchResult<Zone>> {
 
 export function fetchTracksCached(): Promise<CachedFetchResult<Track>> {
   return safeFetch(fetchTracksRemote, 'tracks');
+}
+
+export function fetchAnnotationsCached(): Promise<CachedFetchResult<Annotation>> {
+  return safeFetch(fetchAnnotationsRemote, 'annotations');
 }
 
 export async function loadFromCache(): Promise<{

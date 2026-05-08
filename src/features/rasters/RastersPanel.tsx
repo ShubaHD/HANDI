@@ -86,8 +86,14 @@ export function RastersPanel({
             {rasters.map((r) => {
               const isOn = visibleIds.has(r.id);
               const op = opacity[r.id] ?? 0.7;
+              const captured = r.captured_at
+                ? new Date(r.captured_at).toLocaleDateString('ro-RO')
+                : '';
+              const hint = `${r.name}\n${KIND_LABELS[r.kind]}${r.visibility === 'private' ? ' [privat]' : ''}${
+                captured ? ` • ${captured}` : ''
+              }\n(Hover pe hartă nu merge pentru raster; folosește acest tooltip + Zoom-to)`;
               return (
-                <li key={r.id} className="p-3 hover:bg-slate-800/40">
+                <li key={r.id} className="p-3 hover:bg-slate-800/40" title={hint}>
                   <div className="flex items-start gap-2">
                     <div
                       className="w-3 h-8 rounded flex-shrink-0"
@@ -96,6 +102,7 @@ export function RastersPanel({
                     <button
                       onClick={() => void onZoomTo(r)}
                       className="flex-1 min-w-0 text-left"
+                      title={hint}
                     >
                       <div className="font-medium truncate">{r.name}</div>
                       <div className="text-xs text-slate-400">
@@ -105,7 +112,7 @@ export function RastersPanel({
                         )}
                         {r.captured_at && (
                           <span className="ml-2 font-mono">
-                            {new Date(r.captured_at).toLocaleDateString('ro-RO')}
+                            {captured}
                           </span>
                         )}
                       </div>

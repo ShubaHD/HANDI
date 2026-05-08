@@ -5,10 +5,15 @@ import {
   updateZoneStatus as remoteUpdateZoneStatus,
 } from '@/features/zones/api';
 import { createTrack as remoteCreateTrack, deleteTrack as remoteDeleteTrack } from '@/features/tracks/api';
+import {
+  createAnnotation as remoteCreateAnnotation,
+  deleteAnnotation as remoteDeleteAnnotation,
+  type NewAnnotationInput,
+} from '@/features/annotations/api';
 import type { NewPointInput } from '@/features/points/api';
 import type { NewZoneInput } from '@/features/zones/api';
 import type { NewTrackInput } from '@/features/tracks/api';
-import type { PointOfInterest, Track, Zone } from '@/lib/types';
+import type { Annotation, PointOfInterest, Track, Zone } from '@/lib/types';
 import { enqueue } from './syncQueue';
 
 function isNetworkError(e: unknown): boolean {
@@ -112,6 +117,34 @@ export async function safeDeleteTrack(id: string): Promise<SafeResult<void>> {
   } catch (e) {
     if (isNetworkError(e)) {
       await enqueue('deleteTrack', { id });
+      return { ok: 'queued' };
+    }
+    throw e;
+  }
+}
+
+export async function safeCreateAnnotation(
+  input: NewAnnotationInput,
+): Promise<SafeResult<Annotation>> {
+  try {
+    const data = await remoteCreateAnnotation(input);
+    return { ok: 'remote', data };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      await enqueue('createAnnotation', input);
+      return { ok: 'queued' };
+    }
+    throw e;
+  }
+}
+
+export async function safeDeleteAnnotation(id: string): Promise<SafeResult<void>> {
+  try {
+    await remoteDeleteAnnotation(id);
+    return { ok: 'remote', data: undefined };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      await enqueue('deleteAnnotation', { id });
       return { ok: 'queued' };
     }
     throw e;

@@ -24,6 +24,7 @@ import {
   fetchPointsCached,
   fetchZonesCached,
   fetchTracksCached,
+  fetchAnnotationsCached,
 } from '@/lib/db/cache';
 import { startBackgroundSync } from '@/lib/db/syncQueue';
 import { SyncIndicator } from './SyncIndicator';
@@ -35,6 +36,8 @@ import {
   saveRemoteRasterArchive,
 } from '@/lib/pmtiles';
 import { type AppDiagnostics, checkPmtilesUrl } from '@/lib/diagnostics';
+import type { Annotation, AnnotationSymbol, Visibility } from '@/lib/types';
+import { safeCreateAnnotation } from '@/lib/db/safeApi';
 
 interface PendingPoint {
   lat: number;
@@ -49,6 +52,7 @@ export default function FieldPage() {
   const [points, setPoints] = useState<PointOfInterest[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [rasters, setRasters] = useState<RasterOverlay[]>([]);
   const [cadImports, setCadImports] = useState<CadImport[]>([]);
   const [cadLayers, setCadLayers] = useState<CadLayerRow[]>([]);
@@ -61,6 +65,13 @@ export default function FieldPage() {
 
   const [drawZoneMode, setDrawZoneMode] = useState(false);
   const [pendingZone, setPendingZone] = useState<GeoJSON.Polygon | null>(null);
+
+  const [annotMode, setAnnotMode] = useState<'off' | 'symbol' | 'text' | 'arrow'>('off');
+  const [annotVisibility, setAnnotVisibility] = useState<Visibility>('club');
+  const [annotSymbol, setAnnotSymbol] = useState<AnnotationSymbol>('dolina');
+  const [annotText, setAnnotText] = useState('');
+  const [arrowStart, setArrowStart] = useState<{ lon: number; lat: number } | null>(null);
+  const [annotOpen, setAnnotOpen] = useState(false);
 
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
 
@@ -93,16 +104,18 @@ export default function FieldPage() {
     }
     setError(null);
     try {
-      const [pr, zr, tr, rastersResult, cadImps] = await Promise.all([
+      const [pr, zr, tr, ar, rastersResult, cadImps] = await Promise.all([
         fetchPointsCached(),
         fetchZonesCached(),
         fetchTracksCached(),
+        fetchAnnotationsCached(),
         fetchRasters().catch(() => [] as RasterOverlay[]),
         fetchCadImports().catch(() => [] as CadImport[]),
       ]);
       setPoints(pr.data);
       setZones(zr.data);
       setTracks(tr.data);
+      setAnnotations(ar.data);
       setRasters(rastersResult);
       setCadImports(cadImps);
       const cadLay =
@@ -110,7 +123,7 @@ export default function FieldPage() {
           ? await fetchCadLayers(cadImps.map((i) => i.id)).catch(() => [] as CadLayerRow[])
           : [];
       setCadLayers(cadLay);
-      const errs = [pr, zr, tr]
+      const errs = [pr, zr, tr, ar]
         .filter((r) => r.fromCache && r.error)
         .map((r) => r.error)
         .filter(Boolean);
@@ -144,6 +157,67 @@ export default function FieldPage() {
 
   const onMapClick = (lng: number, lat: number) => {
     if (drawZoneMode) return;
+    if (annotOpen && annotMode !== 'off') {
+      void (async () => {
+        try {
+          if (annotMode === 'arrow') {
+            if (!arrowStart) {
+              setArrowStart({ lon: lng, lat });
+              return;
+            }
+            const geom: GeoJSON.LineString = {
+              type: 'LineString',
+              coordinates: [
+                [arrowStart.lon, arrowStart.lat],
+                [lng, lat],
+              ],
+            };
+            const bearing_deg = computeBearingDeg(arrowStart.lon, arrowStart.lat, lng, lat);
+            setArrowStart(null);
+            const r = await safeCreateAnnotation({
+              kind: 'arrow',
+              geom,
+              bearing_deg,
+              visibility: annotVisibility,
+            });
+            if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
+            void reload();
+            return;
+          }
+
+          if (annotMode === 'text') {
+            const text = annotText.trim();
+            if (!text) {
+              alert('Introdu textul in sidebar (tab Zone).');
+              return;
+            }
+            const r = await safeCreateAnnotation({
+              kind: 'text',
+              text,
+              lat,
+              lon: lng,
+              visibility: annotVisibility,
+            });
+            if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
+            void reload();
+            return;
+          }
+
+          const r = await safeCreateAnnotation({
+            kind: 'symbol',
+            symbol: annotSymbol,
+            lat,
+            lon: lng,
+            visibility: annotVisibility,
+          });
+          if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
+          void reload();
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'Eroare la adnotare');
+        }
+      })();
+      return;
+    }
     setPendingPoint({ lat, lon: lng, elevation: null });
   };
 
@@ -481,6 +555,7 @@ export default function FieldPage() {
             points={points}
             zones={zones}
             tracks={tracks}
+            annotations={annotations}
             rasters={rasters}
             rasterState={rasterStateWithPmtiles}
             cadLayers={cadLayers}
@@ -502,6 +577,102 @@ export default function FieldPage() {
             flyTo={flyTo}
             fitBounds={fitBounds}
           />
+
+          <div className="absolute bottom-6 left-3 z-20 pointer-events-auto">
+            <button
+              onClick={() => {
+                setAnnotOpen((v) => {
+                  const next = !v;
+                  if (!next) {
+                    setAnnotMode('off');
+                    setArrowStart(null);
+                  } else {
+                    if (annotMode === 'off') setAnnotMode('symbol');
+                  }
+                  return next;
+                });
+              }}
+              className={`w-14 h-14 rounded-full shadow-xl border flex items-center justify-center font-bold ${
+                annotOpen ? 'bg-brand-600 border-brand-500 text-white' : 'bg-slate-900/95 border-slate-700 text-slate-200'
+              }`}
+              title="Adnotari (simbol/text/sageata)"
+            >
+              A
+            </button>
+
+            {annotOpen && (
+              <div className="mt-2 w-72 rounded-2xl border border-slate-700 bg-slate-950/95 backdrop-blur p-3 shadow-2xl">
+                <div className="text-xs text-slate-400 mb-2">Adnotari</div>
+                <div className="flex gap-2 mb-2">
+                  {(['symbol', 'text', 'arrow'] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setAnnotMode(m);
+                        setArrowStart(null);
+                      }}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs ${
+                        annotMode === m
+                          ? 'border-brand-500 bg-brand-600/20 text-white'
+                          : 'border-slate-700 text-slate-300 hover:bg-slate-800/40'
+                      }`}
+                      title="Selecteaza modul"
+                    >
+                      {m === 'symbol' ? 'Simbol' : m === 'text' ? 'Text' : arrowStart ? 'Sageata: 2/2' : 'Sageata'}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 text-xs mb-2">
+                  <span className="text-slate-400">Viz:</span>
+                  <button
+                    onClick={() => setAnnotVisibility((v) => (v === 'club' ? 'private' : 'club'))}
+                    className="px-2 py-1 rounded border border-slate-700 hover:bg-slate-800/40"
+                    title="Vizibilitate"
+                  >
+                    {annotVisibility === 'club' ? 'Club' : 'Privat'}
+                  </button>
+                  <span className="text-slate-500 ml-auto">Click pe hartă pentru plasare</span>
+                </div>
+
+                {annotMode === 'symbol' && (
+                  <select
+                    value={annotSymbol}
+                    onChange={(e) => setAnnotSymbol(e.target.value as AnnotationSymbol)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm"
+                    title="Alege simbolul, apoi click pe harta"
+                  >
+                    <option value="diaclaza">Diaclaza</option>
+                    <option value="dolina">Dolina</option>
+                    <option value="abrupt">Abrupt</option>
+                    <option value="pestera">Pestera</option>
+                    <option value="intrebare">Semn intrebari</option>
+                    <option value="mirare">Semn mirari</option>
+                    <option value="ravene">Ravene</option>
+                    <option value="ponoare">Ponoare</option>
+                    <option value="izbuc">Izbucuri</option>
+                    <option value="depresiune_hachuri">Depresiune (hasuri interior)</option>
+                    <option value="alunecare">Alunecare teren</option>
+                  </select>
+                )}
+
+                {annotMode === 'text' && (
+                  <input
+                    value={annotText}
+                    onChange={(e) => setAnnotText(e.target.value)}
+                    placeholder="Text (ex: Nume deal, rau...)"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm"
+                  />
+                )}
+
+                {annotMode === 'arrow' && (
+                  <div className="text-xs text-slate-400">
+                    Click pe hartă pentru start, apoi click pentru capăt.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {!drawZoneMode && (
             <button
@@ -673,6 +844,16 @@ export default function FieldPage() {
       </div>
     </div>
   );
+}
+
+function computeBearingDeg(lon1: number, lat1: number, lon2: number, lat2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const y = Math.sin(toRad(lon2 - lon1)) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
 }
 
 function Modal({ children }: { children: React.ReactNode }) {

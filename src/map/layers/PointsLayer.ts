@@ -39,6 +39,7 @@ export function addPointsLayer(map: MlMap) {
     id: LAYER_CIRCLES,
     type: 'circle',
     source: SOURCE_ID,
+    filter: ['!=', ['get', 'type'], 'label'] as never,
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4, 14, 8, 18, 12],
       'circle-color': colorMatch as never,

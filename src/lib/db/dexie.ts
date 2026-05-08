@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
+import type { Annotation, PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
 
 export interface PendingMutation {
   id?: number;
@@ -10,7 +10,10 @@ export interface PendingMutation {
     | 'updateZoneStatus'
     | 'deleteZone'
     | 'createTrack'
-    | 'deleteTrack';
+    | 'deleteTrack'
+    | 'createAnnotation'
+    | 'deleteAnnotation'
+    | 'updateAnnotation';
   payload: unknown;
   createdAt: number;
   attempts: number;
@@ -36,6 +39,7 @@ class HandiDB extends Dexie {
   zones!: EntityTable<Zone, 'id'>;
   tracks!: EntityTable<Track, 'id'>;
   rasters!: EntityTable<RasterOverlay, 'id'>;
+  annotations!: EntityTable<Annotation, 'id'>;
   pendingMutations!: EntityTable<PendingMutation, 'id'>;
   pmtiles!: EntityTable<PMTilesArchive, 'key'>;
 
@@ -56,6 +60,17 @@ class HandiDB extends Dexie {
       zones: 'id, owner_id, status, visibility, created_at',
       tracks: 'id, owner_id, source, visibility, created_at',
       rasters: 'id, owner_id, kind, visibility, created_at',
+      pendingMutations: '++id, kind, createdAt',
+      pmtiles: 'key, addedAt, kind, remoteUrl, rasterId',
+    });
+
+    // v3: annotations (symbols/text/arrows) offline-first
+    this.version(3).stores({
+      points: 'id, owner_id, type, visibility, created_at',
+      zones: 'id, owner_id, status, visibility, created_at',
+      tracks: 'id, owner_id, source, visibility, created_at',
+      rasters: 'id, owner_id, kind, visibility, created_at',
+      annotations: 'id, owner_id, kind, visibility, created_at, updated_at',
       pendingMutations: '++id, kind, createdAt',
       pmtiles: 'key, addedAt, kind, remoteUrl, rasterId',
     });

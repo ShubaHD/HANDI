@@ -7,6 +7,7 @@ export type PointType =
   | 'dig_site'
   | 'aven'
   | 'resurgence'
+  | 'label'
   | 'other';
 
 export const POINT_TYPES: { value: PointType; label: string; color: string; emoji: string }[] = [
@@ -16,6 +17,7 @@ export const POINT_TYPES: { value: PointType; label: string; color: string; emoj
   { value: 'spring', label: 'Izvor', color: '#0891b2', emoji: 'I' },
   { value: 'resurgence', label: 'Resurgenta', color: '#0e7490', emoji: 'R' },
   { value: 'dig_site', label: 'Zona de sapat', color: '#dc2626', emoji: 'S' },
+  { value: 'label', label: 'Text / eticheta', color: '#0f766e', emoji: 'T' },
   { value: 'other', label: 'Altele', color: '#475569', emoji: 'X' },
 ];
 
@@ -79,4 +81,34 @@ export interface RasterOverlay {
   metadata: Record<string, unknown>;
   visibility: Visibility;
   created_at: string;
+}
+
+export type AnnotationKind = 'symbol' | 'text' | 'arrow';
+
+export type AnnotationSymbol =
+  | 'diaclaza'
+  | 'dolina'
+  | 'abrupt'
+  | 'pestera'
+  | 'intrebare'
+  | 'mirare'
+  | 'ravene'
+  | 'ponoare'
+  | 'izbuc'
+  | 'depresiune_hachuri'
+  | 'alunecare';
+
+export interface Annotation {
+  id: string;
+  owner_id: string;
+  kind: AnnotationKind;
+  symbol: AnnotationSymbol | null;
+  text: string | null;
+  lat: number | null;
+  lon: number | null;
+  geom: GeoJSON.Geometry; // from generated geom_json
+  bearing_deg: number | null;
+  visibility: Visibility;
+  created_at: string;
+  updated_at: string;
 }

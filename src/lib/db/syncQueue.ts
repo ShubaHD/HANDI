@@ -7,12 +7,19 @@ import {
   type NewZoneInput,
 } from '@/features/zones/api';
 import { createTrack, deleteTrack, type NewTrackInput } from '@/features/tracks/api';
+import {
+  createAnnotation,
+  deleteAnnotation,
+  updateAnnotation,
+  type NewAnnotationInput,
+} from '@/features/annotations/api';
 
 const MAX_ATTEMPTS = 10;
 
 interface PointPayload extends NewPointInput {}
 interface ZonePayload extends NewZoneInput {}
 interface TrackPayload extends NewTrackInput {}
+type AnnotationPayload = NewAnnotationInput;
 
 export async function enqueue(kind: PendingMutation['kind'], payload: unknown): Promise<void> {
   await db.pendingMutations.add({
@@ -80,6 +87,17 @@ async function applyMutation(m: PendingMutation): Promise<void> {
     case 'deleteTrack':
       await deleteTrack((m.payload as { id: string }).id);
       return;
+    case 'createAnnotation':
+      await createAnnotation(m.payload as AnnotationPayload);
+      return;
+    case 'deleteAnnotation':
+      await deleteAnnotation((m.payload as { id: string }).id);
+      return;
+    case 'updateAnnotation': {
+      const p = m.payload as { id: string; patch: unknown };
+      await updateAnnotation(p.id, p.patch as never);
+      return;
+    }
   }
 }
 

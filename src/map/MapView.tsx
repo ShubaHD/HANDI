@@ -16,15 +16,24 @@ import { addPointsLayer, POINTS_LAYER_ID, updatePointsLayer } from './layers/Poi
 import { addZonesLayer, updateZonesLayer, ZONES_LAYER_ID } from './layers/ZonesLayer';
 import { addTracksLayer, updateLiveTrack, updateTracksLayer } from './layers/TracksLayer';
 import { syncRasterLayers, type RasterLayerState } from './layers/RasterOverlayLayer';
-import { updateCadLayersOnMap } from './layers/CadLayersRenderer';
+import { getCadLayerPrefix, updateCadLayersOnMap } from './layers/CadLayersRenderer';
+import { addAnnotationsLayer, updateAnnotationsLayer } from './layers/AnnotationsLayer';
 import type { CadLayerRow } from '@/features/cad/api';
 import { BaseMapSwitcher } from './controls/BaseMapSwitcher';
-import type { PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
+import type { Annotation, PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
+import {
+  MapHoverTooltip,
+  type HoverTooltipData,
+  asText,
+  subtitleFromLayer,
+  titleFromProps,
+} from './MapHoverTooltip';
 
 interface Props {
   points: PointOfInterest[];
   zones: Zone[];
   tracks: Track[];
+  annotations: Annotation[];
   rasters: RasterOverlay[];
   rasterState: RasterLayerState;
   cadLayers: CadLayerRow[];
@@ -52,6 +61,7 @@ export function MapView({
   points,
   zones,
   tracks,
+  annotations,
   rasters,
   rasterState,
   cadLayers,
@@ -90,6 +100,18 @@ export function MapView({
   const [mapDebug, setMapDebug] = useState<{ msg: string } | null>(null);
   const [mapDebugDetails, setMapDebugDetails] = useState<{ lines: string[] } | null>(null);
   const renderTicksRef = useRef(0);
+  const hoverTimerRef = useRef<number | null>(null);
+  const lastHoverKeyRef = useRef<string>('');
+  const [hover, setHover] = useState<{ x: number; y: number; data: HoverTooltipData } | null>(null);
+
+  const clearHover = () => {
+    if (hoverTimerRef.current) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    lastHoverKeyRef.current = '';
+    setHover(null);
+  };
 
   // Persist basemap selection for both Leaflet and MapLibre modes
   useEffect(() => {
@@ -122,9 +144,11 @@ export function MapView({
     addZonesLayer(map);
     addTracksLayer(map);
     addPointsLayer(map);
+    addAnnotationsLayer(map);
     updatePointsLayer(map, points);
     updateZonesLayer(map, zones);
     updateTracksLayer(map, tracks);
+    updateAnnotationsLayer(map, annotations);
     updateLiveTrack(map, liveTrack);
     syncRasterLayers(map, rasters, rasterState);
     updateCadLayersOnMap(map, cadLayers);
@@ -355,6 +379,104 @@ export function MapView({
       map.getCanvas().style.cursor = '';
     });
 
+    const HOVER_DELAY_MS = 500;
+    const hoverLayers = [
+      'poi-circles',
+      'poi-labels',
+      'zones-fill',
+      'zones-outline',
+      'zones-label',
+      'tracks-line',
+      'live-track-line',
+      'annotations-symbols',
+      'annotations-text',
+      'annotations-arrows',
+      'annotations-arrow-heads',
+    ];
+
+    const pickHoverData = (layerId: string, props: Record<string, unknown>): HoverTooltipData | null => {
+      const title = titleFromProps(props);
+      if (!title || title === '—') return null;
+
+      if (layerId.startsWith('poi-')) {
+        return {
+          title,
+          subtitle: 'Punct',
+          lines: [
+            { label: 'Tip', value: asText(props.type) },
+            { label: 'Viz', value: asText(props.visibility) },
+          ],
+        };
+      }
+      if (layerId.startsWith('zones-')) {
+        return {
+          title,
+          subtitle: 'Zonă',
+          lines: [
+            { label: 'Status', value: asText(props.status) },
+            { label: 'Prio', value: asText(props.priority) },
+            { label: 'Viz', value: asText(props.visibility) },
+          ],
+        };
+      }
+      if (layerId.startsWith('tracks-') || layerId.startsWith('live-track-')) {
+        return {
+          title,
+          subtitle: 'Traseu',
+          lines: [
+            { label: 'Sursă', value: asText(props.source) },
+            { label: 'Viz', value: asText(props.visibility) },
+          ],
+        };
+      }
+      if (layerId.startsWith(getCadLayerPrefix())) {
+        return {
+          title,
+          subtitle: 'CAD',
+          lines: [{ label: 'Layer', value: layerId.replace(getCadLayerPrefix(), '') }],
+        };
+      }
+      return { title, subtitle: subtitleFromLayer(layerId) };
+    };
+
+    const onMouseMove = (e: maplibregl.MapMouseEvent) => {
+      if (drawRef.current?.enabled) return;
+      const map = mapRef.current;
+      if (!map) return;
+
+      if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current);
+      const point = e.point;
+
+      // Include CAD layers dynamically (added after style load).
+      const styleLayers = map.getStyle()?.layers?.map((l) => l.id) ?? [];
+      const cadIds = styleLayers.filter((id) => id.startsWith(getCadLayerPrefix()));
+      const layers = [...hoverLayers, ...cadIds];
+
+      const feats = map.queryRenderedFeatures(point, { layers: layers as never });
+      const f = feats[0];
+      if (!f) {
+        clearHover();
+        return;
+      }
+
+      const layerId = f.layer.id;
+      const props = (f.properties ?? {}) as Record<string, unknown>;
+      const id = asText(props.id);
+      const key = `${layerId}:${id}:${titleFromProps(props)}`;
+
+      hoverTimerRef.current = window.setTimeout(() => {
+        if (lastHoverKeyRef.current === key && hover) return;
+        const data = pickHoverData(layerId, props);
+        if (!data) return;
+        lastHoverKeyRef.current = key;
+        setHover({ x: point.x, y: point.y, data });
+      }, HOVER_DELAY_MS);
+    };
+
+    const onMouseLeave = () => clearHover();
+    map.on('mousemove', onMouseMove);
+    map.on('mouseout', onMouseLeave);
+
     mapRef.current = map;
     return () => {
       drawRef.current?.stop();
@@ -364,6 +486,9 @@ export function MapView({
       resizeObserverRef.current = null;
       window.removeEventListener('resize', onWinResize);
       window.clearTimeout(debugTimer);
+      map.off('mousemove', onMouseMove);
+      map.off('mouseout', onMouseLeave);
+      clearHover();
       map.remove();
       mapRef.current = null;
     };
@@ -413,6 +538,13 @@ export function MapView({
     if (map.isStyleLoaded()) updateTracksLayer(map, tracks);
     else map.once('idle', () => updateTracksLayer(map, tracks));
   }, [tracks]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.isStyleLoaded()) updateAnnotationsLayer(map, annotations);
+    else map.once('idle', () => updateAnnotationsLayer(map, annotations));
+  }, [annotations]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -519,6 +651,7 @@ export function MapView({
             points={points}
             zones={zones}
             tracks={tracks}
+            annotations={annotations}
             cadLayers={cadLayers}
             onMapClick={onMapClick}
             onBoundsChange={onBoundsChange}
@@ -565,6 +698,7 @@ export function MapView({
   return (
     <div className="relative h-full w-full min-h-0">
       <div ref={containerRef} className="absolute inset-0" />
+      {hover && <MapHoverTooltip x={hover.x} y={hover.y} data={hover.data} />}
 
       {mapDebug && (
         <div className="absolute top-3 right-3 z-20 bg-red-900/80 border border-red-700 text-red-100 rounded-xl p-3 max-w-sm text-xs">

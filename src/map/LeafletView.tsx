@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
-import type { PointOfInterest, Track, Zone } from '@/lib/types';
+import type { Annotation, PointOfInterest, Track, Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
 
@@ -40,6 +40,7 @@ interface Props {
   points: PointOfInterest[];
   zones: Zone[];
   tracks: Track[];
+  annotations: Annotation[];
   cadLayers: CadLayerRow[];
   onMapClick?: (lng: number, lat: number) => void;
   onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
@@ -99,6 +100,7 @@ export function LeafletView({
   points,
   zones,
   tracks,
+  annotations,
   cadLayers,
   onMapClick,
   onBoundsChange,
@@ -107,17 +109,44 @@ export function LeafletView({
 }: Props) {
   const divRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const hoverTooltipRef = useRef<L.Tooltip | null>(null);
   const layersRef = useRef<{
     tile?: L.TileLayer;
     points?: L.GeoJSON;
     zones?: L.GeoJSON;
     tracks?: L.GeoJSON;
+    annotations?: L.LayerGroup;
     cad?: L.LayerGroup;
   }>({});
 
   const pointsFC = useMemo(() => toPointFC(points), [points]);
   const zonesFC = useMemo(() => toZoneFC(zones), [zones]);
   const tracksFC = useMemo(() => toTrackFC(tracks), [tracks]);
+
+  const clearHover = useCallback(() => {
+    if (hoverTimerRef.current) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    const map = mapRef.current;
+    const tt = hoverTooltipRef.current;
+    if (map && tt) map.closeTooltip(tt);
+  }, []);
+
+  const scheduleHover = useCallback((latlng: L.LatLng, html: string, minZoom = 0) => {
+    const map = mapRef.current;
+    const tt = hoverTooltipRef.current;
+    if (!map || !tt) return;
+    clearHover();
+    hoverTimerRef.current = window.setTimeout(() => {
+      if (!mapRef.current || !hoverTooltipRef.current) return;
+      if (map.getZoom() < minZoom) return;
+      hoverTooltipRef.current.setLatLng(latlng);
+      hoverTooltipRef.current.setContent(html);
+      map.openTooltip(hoverTooltipRef.current);
+    }, 500);
+  }, [clearHover]);
 
   useEffect(() => {
     if (!divRef.current) return;
@@ -128,6 +157,13 @@ export function LeafletView({
       attributionControl: true,
     });
     mapRef.current = map;
+    hoverTooltipRef.current = L.tooltip({
+      sticky: true,
+      direction: 'top',
+      offset: L.point(0, -10),
+      opacity: 0.95,
+      className: 'handi-hover-tooltip',
+    });
 
     const last = readLastViewport();
     map.setView([last.lat, last.lng], last.zoom);
@@ -154,8 +190,10 @@ export function LeafletView({
     layersRef.current.tile = tile;
 
     return () => {
+      clearHover();
       map.remove();
       mapRef.current = null;
+      hoverTooltipRef.current = null;
       layersRef.current = {};
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,11 +221,28 @@ export function LeafletView({
     const prev = layersRef.current.points;
     if (prev) map.removeLayer(prev);
     const layer = L.geoJSON(pointsFC, {
-      pointToLayer: (_f, latlng) => L.circleMarker(latlng, { radius: 6, color: '#22c55e', weight: 2, fillOpacity: 0.6 }),
+      pointToLayer: (f, latlng) => {
+        const type = (f.properties as { type?: string } | null)?.type ?? 'other';
+        if (type === 'label') {
+          return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
+        }
+        return L.circleMarker(latlng, { radius: 6, color: '#22c55e', weight: 2, fillOpacity: 0.6 });
+      },
+      onEachFeature: (f, lyr) => {
+        const props = (f.properties as { name?: string; type?: string } | null) ?? null;
+        const name = props?.name ?? '';
+        const type = props?.type ?? 'other';
+        if (!name) return;
+        const lines: string[] = [`<div style="font-weight:600">${escapeHtml(name)}</div>`];
+        lines.push(`<div style="font-size:11px;opacity:.8">Punct • ${escapeHtml(type)}</div>`);
+        const html = lines.join('');
+        lyr.on('mouseover', (e: L.LeafletMouseEvent) => scheduleHover(e.latlng, html, 12));
+        lyr.on('mouseout', () => clearHover());
+      },
     });
     layer.addTo(map);
     layersRef.current.points = layer;
-  }, [pointsFC]);
+  }, [pointsFC, clearHover, scheduleHover]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -196,10 +251,21 @@ export function LeafletView({
     if (prev) map.removeLayer(prev);
     const layer = L.geoJSON(zonesFC, {
       style: () => ({ color: '#38bdf8', weight: 2, fillOpacity: 0.12 }),
+      onEachFeature: (f, lyr) => {
+        const props = (f.properties as { name?: string; status?: string; priority?: string } | null) ?? null;
+        const name = props?.name ?? '';
+        if (!name) return;
+        const html = [
+          `<div style="font-weight:600">${escapeHtml(name)}</div>`,
+          `<div style="font-size:11px;opacity:.8">Zonă • ${escapeHtml(props?.status ?? '')} • ${escapeHtml(props?.priority ?? '')}</div>`,
+        ].join('');
+        lyr.on('mouseover', (e: L.LeafletMouseEvent) => scheduleHover(e.latlng, html, 11));
+        lyr.on('mouseout', () => clearHover());
+      },
     });
     layer.addTo(map);
     layersRef.current.zones = layer;
-  }, [zonesFC]);
+  }, [zonesFC, clearHover, scheduleHover]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -208,10 +274,89 @@ export function LeafletView({
     if (prev) map.removeLayer(prev);
     const layer = L.geoJSON(tracksFC, {
       style: () => ({ color: '#f59e0b', weight: 3, opacity: 0.9 }),
+      onEachFeature: (f, lyr) => {
+        const props = (f.properties as { name?: string } | null) ?? null;
+        const name = props?.name ?? '';
+        if (!name) return;
+        const html = [
+          `<div style="font-weight:600">${escapeHtml(name)}</div>`,
+          `<div style="font-size:11px;opacity:.8">Traseu</div>`,
+        ].join('');
+        lyr.on('mouseover', (e: L.LeafletMouseEvent) => scheduleHover(e.latlng, html, 0));
+        lyr.on('mouseout', () => clearHover());
+      },
     });
     layer.addTo(map);
     layersRef.current.tracks = layer;
-  }, [tracksFC]);
+  }, [tracksFC, clearHover, scheduleHover]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const prev = layersRef.current.annotations;
+    if (prev) map.removeLayer(prev);
+    const group = L.layerGroup();
+
+    for (const a of annotations) {
+      if (a.kind === 'symbol' || a.kind === 'text') {
+        if (a.geom.type !== 'Point') continue;
+        const [lon, lat] = a.geom.coordinates;
+        const latlng = L.latLng(lat, lon);
+        if (a.kind === 'text') {
+          const html = `<div style="font-weight:600">${escapeHtml(a.text ?? '')}</div>`;
+          const marker = L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
+          marker.on('mouseover', () => scheduleHover(latlng, html, 11));
+          marker.on('mouseout', () => clearHover());
+          group.addLayer(marker);
+          continue;
+        }
+
+        const sym = symbolLabel(a.symbol ?? 'other');
+        const src = a.symbol ? `/symbols/${a.symbol}.svg` : '';
+        const icon = L.divIcon({
+          className: 'handi-annotation-icon',
+          html: src
+            ? `<img src="${escapeHtml(src)}" alt="" style="width:18px;height:18px;color:#a855f7"/>`
+            : `<div style="font-size:18px;line-height:18px">${escapeHtml(sym)}</div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        });
+        const marker = L.marker(latlng, { icon, interactive: true });
+        const title = a.text || a.symbol || 'Simbol';
+        const html = `<div style="font-weight:600">${escapeHtml(title)}</div><div style="font-size:11px;opacity:.8">Adnotare</div>`;
+        marker.on('mouseover', () => scheduleHover(latlng, html, 10));
+        marker.on('mouseout', () => clearHover());
+        group.addLayer(marker);
+        continue;
+      }
+
+      if (a.kind === 'arrow' && a.geom.type === 'LineString') {
+        const coords = a.geom.coordinates;
+        if (coords.length < 2) continue;
+        const latlngs = coords.map((c) => L.latLng(c[1], c[0]));
+        const line = L.polyline(latlngs, { color: '#22c55e', weight: 3, opacity: 0.9 });
+        line.on('mouseover', (e) =>
+          scheduleHover(e.latlng, `<div style="font-weight:600">Săgeată</div>`, 0),
+        );
+        line.on('mouseout', () => clearHover());
+        group.addLayer(line);
+
+        const p1 = coords[coords.length - 2];
+        const p2 = coords[coords.length - 1];
+        const bearing = a.bearing_deg ?? computeBearingDeg(p1[0], p1[1], p2[0], p2[1]);
+        const headIcon = L.divIcon({
+          className: 'handi-arrow-head',
+          html: `<div style="transform: rotate(${bearing}deg); font-size:16px; line-height:16px">➤</div>`,
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        });
+        group.addLayer(L.marker(L.latLng(p2[1], p2[0]), { icon: headIcon, interactive: false }));
+      }
+    }
+
+    group.addTo(map);
+    layersRef.current.annotations = group;
+  }, [annotations, clearHover, scheduleHover]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -221,12 +366,33 @@ export function LeafletView({
     const group = L.layerGroup();
     for (const row of cadLayers) {
       if (!row.visible) continue;
-      const layer = L.geoJSON(row.features as GeoJSON.GeoJsonObject, { style: () => styleCad(row) });
+      const layer = L.geoJSON(row.features as GeoJSON.GeoJsonObject, {
+        style: () => styleCad(row),
+        onEachFeature: (f, lyr) => {
+          const props = (f.properties as Record<string, unknown> | null) ?? {};
+          const text =
+            typeof props.text === 'string'
+              ? props.text
+              : typeof props.block === 'string'
+                ? props.block
+                : typeof (props as { name?: unknown }).name === 'string'
+                  ? String((props as { name?: unknown }).name)
+                  : '';
+          const title = text || row.cad_layer;
+          if (!title) return;
+          const html = [
+            `<div style="font-weight:600">${escapeHtml(title)}</div>`,
+            `<div style="font-size:11px;opacity:.8">CAD • ${escapeHtml(row.cad_layer)}</div>`,
+          ].join('');
+          lyr.on('mouseover', (e: L.LeafletMouseEvent) => scheduleHover(e.latlng, html, 0));
+          lyr.on('mouseout', () => clearHover());
+        },
+      });
       group.addLayer(layer);
     }
     group.addTo(map);
     layersRef.current.cad = group;
-  }, [cadLayers]);
+  }, [cadLayers, clearHover, scheduleHover]);
 
   // viewport controls
   useEffect(() => {
@@ -245,5 +411,53 @@ export function LeafletView({
   }, [fitBounds]);
 
   return <div ref={divRef} className="absolute inset-0" />;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function symbolLabel(symbol: string): string {
+  switch (symbol) {
+    case 'diaclaza':
+      return '⟂';
+    case 'dolina':
+      return '◯';
+    case 'abrupt':
+      return '⛰';
+    case 'pestera':
+      return '⊙';
+    case 'intrebare':
+      return '?';
+    case 'mirare':
+      return '!';
+    case 'ravene':
+      return 'V';
+    case 'ponoare':
+      return '⊘';
+    case 'izbuc':
+      return '⛲';
+    case 'depresiune_hachuri':
+      return '⌵';
+    case 'alunecare':
+      return '⇣';
+    default:
+      return '•';
+  }
+}
+
+function computeBearingDeg(lon1: number, lat1: number, lon2: number, lat2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const y = Math.sin(toRad(lon2 - lon1)) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
 }
 
