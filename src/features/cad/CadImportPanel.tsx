@@ -93,7 +93,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
     setError(null);
     setLastDiag(null);
     try {
-      const text = await file.text();
+      const text = await readDxfText(file);
       const parsed = parseDxfStereo70Full(file.name, text, { sourceCrs });
 
       if (parsed.layers.length === 0) {
@@ -122,6 +122,36 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
       setImporting(false);
     }
   };
+
+  async function readDxfText(file: File): Promise<string> {
+    const buf = await file.arrayBuffer();
+    const preview = new TextDecoder('latin1').decode(buf.slice(0, Math.min(buf.byteLength, 64_000)));
+
+    // DXF header typically contains $DWGCODEPAGE + ANSI_125x
+    // Example:
+    //   9
+    //   $DWGCODEPAGE
+    //   3
+    //   ANSI_1252
+    const m = preview.match(/\$DWGCODEPAGE[\s\S]{0,200}?\n\s*3\s*\n\s*([A-Za-z0-9_:-]+)/m);
+    const code = (m?.[1] ?? '').trim();
+
+    const enc =
+      code === 'ANSI_1250'
+        ? 'windows-1250'
+        : code === 'ANSI_1252'
+          ? 'windows-1252'
+          : code === 'UTF-8' || code === 'UTF8'
+            ? 'utf-8'
+            : 'windows-1252';
+
+    try {
+      return new TextDecoder(enc).decode(buf);
+    } catch {
+      // Fallback for browsers missing encoding support.
+      return new TextDecoder('utf-8').decode(buf);
+    }
+  }
 
   const onPickPointsCsv = async (file: File) => {
     setImportingPoints(true);

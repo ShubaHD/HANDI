@@ -55,9 +55,11 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
         layout: {
           // Show only real text labels; avoid block names like "Mark".
           'text-field': ['get', 'text'],
-          'text-size': 11,
+          'text-size': 13,
           'text-offset': [0, 0.6],
           'text-anchor': 'top',
+          'text-allow-overlap': true,
+          'text-optional': true,
         },
         paint: {
           'text-color': st.color,
