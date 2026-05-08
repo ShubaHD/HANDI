@@ -47,9 +47,14 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
         id: `${PREFIX_LAYER}${row.id}-sym`,
         type: 'symbol',
         source: srcId,
-        filter: ['==', ['geometry-type'], 'Point'] as never,
+        filter: [
+          'all',
+          ['==', ['geometry-type'], 'Point'],
+          ['!=', ['coalesce', ['get', 'text'], ''], ''],
+        ] as never,
         layout: {
-          'text-field': ['coalesce', ['get', 'text'], ['get', 'block'], ''],
+          // Show only real text labels; avoid block names like "Mark".
+          'text-field': ['get', 'text'],
           'text-size': 11,
           'text-offset': [0, 0.6],
           'text-anchor': 'top',
