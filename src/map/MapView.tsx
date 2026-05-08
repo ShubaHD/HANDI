@@ -621,6 +621,23 @@ export function MapView({
       >
         {locating ? '...' : 'GPS'}
       </button>
+
+      <div className="absolute bottom-40 right-3 z-10 flex flex-col gap-2">
+        <button
+          onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
+          className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 flex items-center justify-center text-lg font-bold"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <button
+          onClick={() => mapRef.current?.zoomOut({ duration: 250 })}
+          className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 flex items-center justify-center text-lg font-bold"
+          title="Zoom out"
+        >
+          −
+        </button>
+      </div>
     </div>
   );
 }

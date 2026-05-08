@@ -586,6 +586,31 @@ export default function FieldPage() {
               {diagLoading && <div>Rulez verificari…</div>}
               {diag && (
                 <>
+                  <button
+                    onClick={() => {
+                      const ok = confirm(
+                        'Reset cache (Service Worker + caches) si reload?\\n\\nFoloseste asta cand aplicatia pare blocata dupa deploy.',
+                      );
+                      if (!ok) return;
+                      void (async () => {
+                        try {
+                          if ('serviceWorker' in navigator) {
+                            const regs = await navigator.serviceWorker.getRegistrations();
+                            await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+                          }
+                          if ('caches' in window) {
+                            const keys = await caches.keys();
+                            await Promise.all(keys.map((k) => caches.delete(k)));
+                          }
+                        } finally {
+                          window.location.reload();
+                        }
+                      })();
+                    }}
+                    className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+                  >
+                    Reset cache + reload
+                  </button>
                   <div className="text-slate-400">{diag.timeISO}</div>
                   <div>
                     <span className="text-slate-400">Renderer:</span> {diag.renderer}
