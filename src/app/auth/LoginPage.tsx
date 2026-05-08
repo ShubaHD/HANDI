@@ -7,7 +7,6 @@ export default function LoginPage() {
   const { session, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +33,6 @@ export default function LoginPage() {
       setError(res.error.message);
       return;
     }
-    setSent(false);
   };
 
   return (
@@ -57,63 +55,46 @@ export default function LoginPage() {
           </div>
         )}
 
-        {sent ? (
-          <div className="text-center py-6">
-            <div className="text-4xl mb-3">@</div>
-            <h2 className="font-semibold mb-1">Verifica emailul</h2>
-            <p className="text-sm text-slate-400">
-              Ti-am trimis un link magic la <strong>{email}</strong>. Apasa-l ca sa intri.
-            </p>
-            <button
-              type="button"
-              className="mt-4 text-xs px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700"
-              onClick={() => setSent(false)}
-            >
-              Inapoi
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="space-y-3">
-            <label className="block">
-              <span className="text-sm text-slate-300">Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
-                placeholder="tu@example.com"
-              />
-            </label>
+        <form onSubmit={submit} className="space-y-3">
+          <label className="block">
+            <span className="text-sm text-slate-300">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
+              placeholder="tu@example.com"
+            />
+          </label>
 
-            <label className="block">
-              <span className="text-sm text-slate-300">Parola</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
-                placeholder="minim 6 caractere"
-              />
-            </label>
+          <label className="block">
+            <span className="text-sm text-slate-300">Parola</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500"
+              placeholder="minim 6 caractere"
+            />
+          </label>
 
-            {error && <div className="text-sm text-red-400">{error}</div>}
-            <button
-              type="submit"
-              disabled={busy || !canSubmit}
-              className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-700 disabled:text-slate-400 font-medium transition"
-            >
-              {busy ? 'Intru...' : 'Intra'}
-            </button>
+          {error && <div className="text-sm text-red-400">{error}</div>}
+          <button
+            type="submit"
+            disabled={busy || !canSubmit}
+            className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-700 disabled:text-slate-400 font-medium transition"
+          >
+            {busy ? 'Intru...' : 'Intra'}
+          </button>
 
-            <p className="text-xs text-slate-500 text-center pt-2">
-              Conturile se creeaza de administrator in Supabase (invite-only).
-            </p>
-          </form>
-        )}
+          <p className="text-xs text-slate-500 text-center pt-2">
+            Conturile se creeaza de administrator in Supabase (invite-only).
+          </p>
+        </form>
       </div>
     </div>
   );

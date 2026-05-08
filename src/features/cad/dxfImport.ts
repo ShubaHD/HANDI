@@ -187,7 +187,7 @@ function decodeMText(raw: string): string {
     if (semi !== -1) {
       const payload = s.slice(i + 2, semi);
       if (code === 'S') {
-        out += (payload.split(/[\/#\^]/)[0] ?? '');
+        out += (payload.split(/[/#^]/)[0] ?? '');
       }
       i = semi;
       continue;

@@ -111,7 +111,7 @@ VITE_SUPABASE_ANON_KEY=eyJhbGc...
 npm run dev
 ```
 
-Deschide `http://localhost:5173`. Te redirectează la login. Introdu email, primești link magic, click → ești în app.
+Deschide `http://localhost:5173`. Te redirectează la login. Introdu email + parolă → ești în app.
 
 ### 5. Build pentru deploy
 
