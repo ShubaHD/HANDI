@@ -22,7 +22,7 @@ interface Props {
   onAdd: () => void;
   onToggle: (id: string) => void;
   onSetOpacity: (id: string, v: number) => void;
-  onZoomTo: (r: RasterOverlay) => void;
+  onZoomTo: (r: RasterOverlay) => void | Promise<void>;
   onChanged: () => void;
 }
 
@@ -75,7 +75,7 @@ export function RastersPanel({
                       style={{ backgroundColor: KIND_COLORS[r.kind] }}
                     />
                     <button
-                      onClick={() => onZoomTo(r)}
+                      onClick={() => void onZoomTo(r)}
                       className="flex-1 min-w-0 text-left"
                     >
                       <div className="font-medium truncate">{r.name}</div>

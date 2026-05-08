@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PMTiles } from 'pmtiles';
 import { MapView } from '@/map/MapView';
 import { PointForm } from '@/features/points/PointForm';
 import { PointsList } from '@/features/points/PointsList';
@@ -286,7 +287,30 @@ export default function FieldPage() {
                 });
               }}
               onSetOpacity={(id, v) => setRasterOpacity((p) => ({ ...p, [id]: v }))}
-              onZoomTo={(r) => {
+              onZoomTo={async (r) => {
+                const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
+                const pmUrl = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
+                const isPMTiles = meta?.format === 'pmtiles' && Boolean(pmUrl);
+                if (isPMTiles && pmUrl) {
+                  try {
+                    const arch = new PMTiles(pmUrl);
+                    const h = await arch.getHeader();
+                    setFitBounds([
+                      [h.minLon, h.minLat],
+                      [h.maxLon, h.maxLat],
+                    ]);
+                    setFlyTo({
+                      lng: (h.minLon + h.maxLon) / 2,
+                      lat: (h.minLat + h.maxLat) / 2,
+                      zoom: h.maxZoom ?? 16,
+                    });
+                    setRasterVisible((prev) => new Set(prev).add(r.id));
+                    setSidebarOpen(false);
+                    return;
+                  } catch {
+                    // fall back to stored bounds if remote header read fails
+                  }
+                }
                 const c = rasterCornersFromBounds(r.bounds);
                 if (!c) return;
                 setFitBounds([

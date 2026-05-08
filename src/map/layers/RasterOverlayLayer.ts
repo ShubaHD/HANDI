@@ -46,11 +46,17 @@ export function syncRasterLayers(
 
     if (!map.getSource(srcId)) {
       if (isPMTiles) {
-        const maxzoom = Number((r.metadata as { maxzoom?: unknown } | undefined)?.maxzoom);
+        const meta = r.metadata as { maxzoom?: unknown; minzoom?: unknown } | null | undefined;
+        const maxzoom = Number(meta?.maxzoom);
+        const minzoomRaw = meta?.minzoom;
+        const minzoom = Number(
+          typeof minzoomRaw === 'number' || typeof minzoomRaw === 'string' ? minzoomRaw : maxzoom,
+        );
         map.addSource(srcId, {
           type: 'raster',
           url: `pmtiles://${url}`,
           tileSize: 256,
+          ...(Number.isFinite(minzoom) ? { minzoom } : {}),
           ...(Number.isFinite(maxzoom) ? { maxzoom } : {}),
         });
       } else {
