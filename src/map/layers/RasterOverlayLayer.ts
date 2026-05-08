@@ -41,7 +41,8 @@ export function syncRasterLayers(
 
     const format = (r.metadata as { format?: unknown } | null | undefined)?.format;
     const isPMTiles = format === 'pmtiles';
-    const url = publicUrl(r.storage_path);
+    const metaUrl = (r.metadata as { pmtiles_url?: unknown } | null | undefined)?.pmtiles_url;
+    const url = typeof metaUrl === 'string' && metaUrl.trim() ? metaUrl.trim() : publicUrl(r.storage_path);
 
     if (!map.getSource(srcId)) {
       if (isPMTiles) {
