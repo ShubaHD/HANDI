@@ -97,6 +97,75 @@ function degToRad(d: number): number {
   return (d * Math.PI) / 180;
 }
 
+function decodeDxfText(s: string): string {
+  // Common DXF TEXT escapes (esp. from ODA/AutoCAD exports)
+  return String(s ?? '')
+    .replace(/%%[Dd]/g, '°')
+    .replace(/%%[Pp]/g, '±')
+    .replace(/%%[Cc]/g, '⌀')
+    .replace(/%%[Uu]/g, '')
+    .trim();
+}
+
+function decodeMText(raw: string): string {
+  // Keep plain text while removing MTEXT formatting codes.
+  // Braces group formatting; the content inside must remain.
+  const s = String(raw ?? '');
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '{' || ch === '}') continue;
+    if (ch !== '\\') {
+      out += ch;
+      continue;
+    }
+
+    const next = s[i + 1] ?? '';
+
+    // Simple escapes
+    if (next === '\\' || next === '{' || next === '}') {
+      out += next;
+      i += 1;
+      continue;
+    }
+    if (next === 'P') {
+      out += ' ';
+      i += 1;
+      continue;
+    }
+    if (next === '~') {
+      out += ' ';
+      i += 1;
+      continue;
+    }
+
+    // Unicode escape: \U+XXXX
+    if (next === 'U' && s[i + 2] === '+') {
+      const hex = s.slice(i + 3, i + 7);
+      if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+        out += String.fromCharCode(parseInt(hex, 16));
+        i += 6;
+        continue;
+      }
+    }
+
+    // Formatting codes like \A...; \C...; \F...; \H...; \W...; etc.
+    // Stacked fractions: \S...; => keep first token (before '/', '#', or '^')
+    const code = next;
+    const semi = s.indexOf(';', i + 2);
+    if (semi !== -1) {
+      const payload = s.slice(i + 2, semi);
+      if (code === 'S') {
+        out += (payload.split(/[\/#\^]/)[0] ?? '');
+      }
+      i = semi;
+      continue;
+    }
+    // Unknown/unterminated code: ignore.
+  }
+  return decodeDxfText(out).replace(/\s+/g, ' ').trim();
+}
+
 function insertToAffine(t: { x: number; y: number; sx: number; sy: number; rotRad: number }): Affine2D {
   const c = Math.cos(t.rotRad);
   const s = Math.sin(t.rotRad);
@@ -412,8 +481,8 @@ export function parseDxfStereo70Full(
 
     if (type === 'TEXT' || type === 'MTEXT') {
       const pos = (e.start ?? e.position ?? e.point) as XY | undefined;
-      let text = String((e.text as string | undefined) ?? '').trim();
-      if (type === 'MTEXT') text = text.replace(/\{[^}]*\}/g, '').replace(/\\P/g, ' ').trim();
+      const raw = String((e.text as string | undefined) ?? '');
+      const text = type === 'MTEXT' ? decodeMText(raw) : decodeDxfText(raw);
       if (!pos || !text) return;
       const [lon, lat] = toLL(pos);
       push(ln, {
