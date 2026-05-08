@@ -151,7 +151,7 @@ export function RastersPanel({
                         disabled={busyId !== null}
                         title="Salveaza / sterge copia offline"
                       >
-                        {offlinePmtilesById[r.id] ? 'Offline: ON' : 'Save offline'}
+                        {offlinePmtilesById[r.id] ? 'LiDAR offline: ON' : 'Save LiDAR offline'}
                       </button>
                     )}
                     <button

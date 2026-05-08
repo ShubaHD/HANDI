@@ -54,7 +54,9 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
 }
 
 export async function listLocalArchives(): Promise<PMTilesArchive[]> {
-  return db.pmtiles.orderBy('addedAt').reverse().toArray();
+  const all = await db.pmtiles.orderBy('addedAt').reverse().toArray();
+  // Back-compat: older entries might have kind missing; treat as basemap.
+  return all.filter((a) => a.kind !== 'raster');
 }
 
 export async function listRasterArchives(): Promise<PMTilesArchive[]> {
