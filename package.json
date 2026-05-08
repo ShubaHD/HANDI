@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
+    "verify:pmtiles": "node scripts/verify-pmtiles.mjs",
     "generate-pwa-assets": "pwa-assets-generator"
   },
   "keywords": [
