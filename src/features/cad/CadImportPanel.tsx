@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   bboxFromCadImportBounds,
   cadImportSourceUrl,
@@ -15,6 +15,7 @@ import { CavePlansPanel } from '@/features/cavePlans/CavePlansPanel';
 import type { CavePlan } from '@/features/cavePlans/api';
 import { createPointsBulk } from '@/features/points/api';
 import { parsePointsCsvToInputs } from '@/features/points/csvImport';
+import { POINT_TYPES, type PointType } from '@/lib/types';
 
 const CAD_KIND_LABEL: Record<CadLayerRow['kind'], string> = {
   caves: 'Peșteri',
@@ -78,6 +79,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
   const [sourceCrs, setSourceCrs] = useState<Stereo70SourceCrs>('EPSG:3844');
   const [importingPoints, setImportingPoints] = useState(false);
   const [pointsMsg, setPointsMsg] = useState<string | null>(null);
+  const [csvPointType, setCsvPointType] = useState<PointType>('cave');
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingBusy, setEditingBusy] = useState(false);
   const [editingError, setEditingError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
       const { inputs, diag } = parsePointsCsvToInputs({
         csvText,
         sourceCrs,
-        defaultType: 'other',
+        defaultType: csvPointType,
         defaultVisibility: 'club',
       });
 
@@ -155,6 +157,11 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
       setImportingPoints(false);
     }
   };
+
+  const csvTypeOptions = useMemo(
+    () => POINT_TYPES.map((t) => ({ value: t.value, label: t.label })),
+    [],
+  );
 
   const copyDiag = async () => {
     if (!lastDiag) return;
@@ -274,6 +281,21 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
                 }}
               />
             </label>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2">
+              <div className="text-[11px] uppercase text-slate-500 mb-1">Simbol puncte CSV</div>
+              <select
+                className="w-full rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs px-2 py-2"
+                value={csvPointType}
+                onChange={(e) => setCsvPointType(e.target.value as PointType)}
+              >
+                {csvTypeOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1 text-[10px] text-slate-500">Se aplică tuturor punctelor din fișier.</div>
+            </div>
             {pointsMsg && <div className="text-xs text-slate-300">{pointsMsg}</div>}
             {error && <div className="text-xs text-red-300">{error}</div>}
 

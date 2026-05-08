@@ -52,7 +52,7 @@ export function addPointsLayer(map: MlMap) {
     id: LAYER_LABELS,
     type: 'symbol',
     source: SOURCE_ID,
-    minzoom: 13,
+    minzoom: 12,
     layout: {
       'text-field': ['get', 'name'],
       'text-size': 11,
