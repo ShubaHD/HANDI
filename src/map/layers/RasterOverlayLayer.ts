@@ -8,6 +8,7 @@ const LAYER_PREFIX = 'raster-overlay-lyr-';
 export interface RasterLayerState {
   visibleIds: Set<string>;
   opacity: Record<string, number>;
+  pmtilesUrlByRasterId?: Record<string, string>;
 }
 
 export function syncRasterLayers(
@@ -42,7 +43,13 @@ export function syncRasterLayers(
     const format = (r.metadata as { format?: unknown } | null | undefined)?.format;
     const isPMTiles = format === 'pmtiles';
     const metaUrl = (r.metadata as { pmtiles_url?: unknown } | null | undefined)?.pmtiles_url;
-    const url = typeof metaUrl === 'string' && metaUrl.trim() ? metaUrl.trim() : publicUrl(r.storage_path);
+    const overrideUrl = state.pmtilesUrlByRasterId?.[r.id];
+    const url =
+      typeof overrideUrl === 'string' && overrideUrl.trim()
+        ? overrideUrl.trim()
+        : typeof metaUrl === 'string' && metaUrl.trim()
+          ? metaUrl.trim()
+          : publicUrl(r.storage_path);
 
     if (!map.getSource(srcId)) {
       if (isPMTiles) {

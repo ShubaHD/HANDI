@@ -47,6 +47,7 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
     minzoom: meta.minzoom,
     maxzoom: meta.maxzoom,
     addedAt: Date.now(),
+    kind: 'basemap',
   };
   await db.pmtiles.put(archive);
   return archive;
@@ -54,6 +55,14 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
 
 export async function listLocalArchives(): Promise<PMTilesArchive[]> {
   return db.pmtiles.orderBy('addedAt').reverse().toArray();
+}
+
+export async function listRasterArchives(): Promise<PMTilesArchive[]> {
+  return db.pmtiles.where('kind').equals('raster').reverse().sortBy('addedAt');
+}
+
+export async function getRasterArchiveByRasterId(rasterId: string): Promise<PMTilesArchive | undefined> {
+  return db.pmtiles.where('rasterId').equals(rasterId).first();
 }
 
 export async function deleteLocalArchive(key: string): Promise<void> {
@@ -72,6 +81,73 @@ export function archiveBlobUrl(arch: PMTilesArchive): string {
     blobUrlByKey.set(arch.key, url);
   }
   return url;
+}
+
+async function readResponseToBlob(
+  res: Response,
+  onProgress?: (p: { loaded: number; total?: number }) => void,
+): Promise<Blob> {
+  const total = Number(res.headers.get('content-length') ?? '');
+  const body = res.body;
+  if (!body) {
+    const buf = await res.arrayBuffer();
+    onProgress?.({ loaded: buf.byteLength, total: Number.isFinite(total) ? total : undefined });
+    return new Blob([buf]);
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let loaded = 0;
+  while (true) {
+    const r = await reader.read();
+    if (r.done) break;
+    chunks.push(new Uint8Array(r.value.buffer.slice(0)));
+    loaded += r.value.byteLength;
+    onProgress?.({ loaded, total: Number.isFinite(total) ? total : undefined });
+  }
+  return new Blob(chunks, { type: 'application/octet-stream' });
+}
+
+export async function saveRemoteRasterArchive(args: {
+  rasterId: string;
+  name: string;
+  url: string;
+  onProgress?: (p: { loaded: number; total?: number }) => void;
+}): Promise<PMTilesArchive> {
+  const res = await fetch(args.url, { method: 'GET' });
+  if (!res.ok) throw new Error(`Download PMTiles failed (${res.status})`);
+  const blob = await readResponseToBlob(res, args.onProgress);
+  const meta = await readArchiveMetadata(blob);
+  const key = `raster-${args.rasterId}`;
+  const archive: PMTilesArchive = {
+    key,
+    name: args.name,
+    blob,
+    size: blob.size,
+    bounds: meta.bounds,
+    minzoom: meta.minzoom,
+    maxzoom: meta.maxzoom,
+    addedAt: Date.now(),
+    kind: 'raster',
+    remoteUrl: args.url,
+    rasterId: args.rasterId,
+  };
+  await db.pmtiles.put(archive);
+  return archive;
+}
+
+export async function deleteRasterArchive(rasterId: string): Promise<void> {
+  const arch = await getRasterArchiveByRasterId(rasterId);
+  if (!arch) return;
+  await deleteLocalArchive(arch.key);
+}
+
+export async function buildRasterUrlOverrides(): Promise<Record<string, string>> {
+  const ras = await db.pmtiles.where('kind').equals('raster').toArray();
+  const out: Record<string, string> = {};
+  for (const a of ras) {
+    if (a.rasterId) out[a.rasterId] = archiveBlobUrl(a);
+  }
+  return out;
 }
 
 export async function buildBaseMapsFromArchives(): Promise<BaseMapDef[]> {

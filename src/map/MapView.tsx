@@ -68,6 +68,7 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [base, setBase] = useState<BaseMapDef>(() => {
     try {
       const qs = new URLSearchParams(window.location.search);
@@ -148,6 +149,26 @@ export function MapView({
         /* ignore */
       }
     };
+
+    // Keep MapLibre canvas in sync with container sizing.
+    // This prevents "blank map" and lost pan/zoom after layout changes (sidebar/devtools/PWA).
+    const el = containerRef.current;
+    let raf = 0;
+    const scheduleResize = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        safeResize();
+        updateDebugDetails();
+      });
+    };
+    try {
+      const ro = new ResizeObserver(() => scheduleResize());
+      ro.observe(el);
+      resizeObserverRef.current = ro;
+    } catch {
+      // ResizeObserver may be unavailable in some browsers; fall back to window resize only.
+    }
 
     let gotIdle = false;
     const debugTimer = window.setTimeout(() => {
@@ -312,6 +333,9 @@ export function MapView({
     return () => {
       drawRef.current?.stop();
       drawRef.current = null;
+      if (raf) cancelAnimationFrame(raf);
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       window.removeEventListener('resize', onWinResize);
       window.clearTimeout(debugTimer);
       map.remove();

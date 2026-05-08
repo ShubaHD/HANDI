@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import type { RasterKind, RasterOverlay } from '@/lib/types';
 import { deleteRaster } from './api';
 
@@ -23,6 +24,9 @@ interface Props {
   onToggle: (id: string) => void;
   onSetOpacity: (id: string, v: number) => void;
   onZoomTo: (r: RasterOverlay) => void | Promise<void>;
+  onSaveOfflinePmtiles: (r: RasterOverlay, onProgress: (p: { loaded: number; total?: number }) => void) => Promise<void>;
+  onDeleteOfflinePmtiles: (r: RasterOverlay) => Promise<void>;
+  offlinePmtilesById: Record<string, string>;
   onChanged: () => void;
 }
 
@@ -34,8 +38,23 @@ export function RastersPanel({
   onToggle,
   onSetOpacity,
   onZoomTo,
+  onSaveOfflinePmtiles,
+  onDeleteOfflinePmtiles,
+  offlinePmtilesById,
   onChanged,
 }: Props) {
+  const [saving, setSaving] = useState<Record<string, { loaded: number; total?: number }>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const isPmtiles = useMemo(() => {
+    const m: Record<string, boolean> = {};
+    for (const r of rasters) {
+      const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
+      m[r.id] = meta?.format === 'pmtiles' && typeof meta?.pmtiles_url === 'string';
+    }
+    return m;
+  }, [rasters]);
+
   const remove = async (r: RasterOverlay) => {
     if (!confirm(`Stergi raster overlay "${r.name}"?`)) return;
     try {
@@ -100,6 +119,41 @@ export function RastersPanel({
                       />
                       Vizibil
                     </label>
+                    {isPmtiles[r.id] && (
+                      <button
+                        onClick={() => {
+                          if (busyId) return;
+                          const hasLocal = Boolean(offlinePmtilesById[r.id]);
+                          if (!hasLocal) {
+                            setBusyId(r.id);
+                            setSaving((p) => ({ ...p, [r.id]: { loaded: 0 } }));
+                            void onSaveOfflinePmtiles(r, (prog) => {
+                              setSaving((p) => ({ ...p, [r.id]: prog }));
+                            })
+                              .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
+                              .finally(() => {
+                                setBusyId(null);
+                                setSaving((p) => {
+                                  const n = { ...p };
+                                  delete n[r.id];
+                                  return n;
+                                });
+                              });
+                          } else {
+                            if (!confirm('Stergi copia offline pentru acest LiDAR?')) return;
+                            setBusyId(r.id);
+                            void onDeleteOfflinePmtiles(r)
+                              .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
+                              .finally(() => setBusyId(null));
+                          }
+                        }}
+                        className="text-xs px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-50"
+                        disabled={busyId !== null}
+                        title="Salveaza / sterge copia offline"
+                      >
+                        {offlinePmtilesById[r.id] ? 'Offline: ON' : 'Save offline'}
+                      </button>
+                    )}
                     <button
                       onClick={() => remove(r)}
                       className="text-slate-500 hover:text-red-400 px-1 py-1 text-xs"
@@ -108,6 +162,14 @@ export function RastersPanel({
                       X
                     </button>
                   </div>
+                  {saving[r.id] && (
+                    <div className="mt-2 ml-5 text-xs text-slate-400">
+                      Download: {Math.round((saving[r.id].loaded / 1024 / 1024) * 10) / 10} MB
+                      {saving[r.id].total
+                        ? ` / ${Math.round((saving[r.id].total! / 1024 / 1024) * 10) / 10} MB`
+                        : ''}
+                    </div>
+                  )}
                   {isOn && (
                     <div className="mt-2 ml-5">
                       <label className="text-xs text-slate-400">

@@ -29,6 +29,11 @@ import { startBackgroundSync } from '@/lib/db/syncQueue';
 import { SyncIndicator } from './SyncIndicator';
 import { CadImportPanel } from '@/features/cad/CadImportPanel';
 import { fetchCadImports, fetchCadLayers, type CadImport, type CadLayerRow } from '@/features/cad/api';
+import {
+  buildRasterUrlOverrides,
+  deleteRasterArchive,
+  saveRemoteRasterArchive,
+} from '@/lib/pmtiles';
 
 interface PendingPoint {
   lat: number;
@@ -60,6 +65,7 @@ export default function FieldPage() {
 
   const [rasterVisible, setRasterVisible] = useState<Set<string>>(new Set());
   const [rasterOpacity, setRasterOpacity] = useState<Record<string, number>>({});
+  const [offlinePmtilesById, setOfflinePmtilesById] = useState<Record<string, string>>({});
   const [showRasterUpload, setShowRasterUpload] = useState(false);
   const [currentBbox, setCurrentBbox] = useState<BBox | null>(null);
 
@@ -68,7 +74,11 @@ export default function FieldPage() {
   const [fitBounds, setFitBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [syncTick, setSyncTick] = useState(0);
 
-  const rasterState: RasterLayerState = { visibleIds: rasterVisible, opacity: rasterOpacity };
+  const rasterStateWithPmtiles: RasterLayerState = {
+    visibleIds: rasterVisible,
+    opacity: rasterOpacity,
+    pmtilesUrlByRasterId: offlinePmtilesById,
+  };
 
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -112,6 +122,12 @@ export default function FieldPage() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    void buildRasterUrlOverrides().then(setOfflinePmtilesById).catch(() => {
+      /* ignore */
+    });
+  }, [syncTick]);
 
   useEffect(() => {
     const stop = startBackgroundSync(() => {
@@ -285,8 +301,42 @@ export default function FieldPage() {
                   else next.add(id);
                   return next;
                 });
+
+                // If user enables a PMTiles raster, force MapLibre renderer (Leaflet cannot render PMTiles).
+                try {
+                  const r = rasters.find((x) => x.id === id);
+                  const meta = r?.metadata as { format?: unknown } | null | undefined;
+                  const enabling = !rasterVisible.has(id);
+                  const isPMTiles = meta?.format === 'pmtiles';
+                  const qs = new URLSearchParams(window.location.search);
+                  if (enabling && isPMTiles && !qs.has('maplibre') && !qs.has('leaflet')) {
+                    qs.set('maplibre', '1');
+                    const nextUrl = `${window.location.pathname}?${qs.toString()}${window.location.hash ?? ''}`;
+                    window.history.replaceState({}, '', nextUrl);
+                  }
+                } catch {
+                  /* ignore */
+                }
               }}
               onSetOpacity={(id, v) => setRasterOpacity((p) => ({ ...p, [id]: v }))}
+              offlinePmtilesById={offlinePmtilesById}
+              onSaveOfflinePmtiles={async (r, onProgress) => {
+                const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
+                if (meta?.format !== 'pmtiles' || typeof meta?.pmtiles_url !== 'string') {
+                  throw new Error('Raster-ul nu are pmtiles_url');
+                }
+                await saveRemoteRasterArchive({
+                  rasterId: r.id,
+                  name: r.name,
+                  url: meta.pmtiles_url,
+                  onProgress,
+                });
+                setOfflinePmtilesById(await buildRasterUrlOverrides());
+              }}
+              onDeleteOfflinePmtiles={async (r) => {
+                await deleteRasterArchive(r.id);
+                setOfflinePmtilesById(await buildRasterUrlOverrides());
+              }}
               onZoomTo={async (r) => {
                 const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
                 const pmUrl = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
@@ -358,7 +408,7 @@ export default function FieldPage() {
             zones={zones}
             tracks={tracks}
             rasters={rasters}
-            rasterState={rasterState}
+            rasterState={rasterStateWithPmtiles}
             cadLayers={cadLayers}
             liveTrack={liveTrack}
             drawZoneMode={drawZoneMode}

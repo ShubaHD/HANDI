@@ -26,6 +26,9 @@ export interface PMTilesArchive {
   minzoom: number | null;
   maxzoom: number | null;
   addedAt: number;
+  kind?: 'basemap' | 'raster';
+  remoteUrl?: string;
+  rasterId?: string;
 }
 
 class HandiDB extends Dexie {
@@ -45,6 +48,16 @@ class HandiDB extends Dexie {
       rasters: 'id, owner_id, kind, visibility, created_at',
       pendingMutations: '++id, kind, createdAt',
       pmtiles: 'key, addedAt',
+    });
+
+    // v2: store PMTiles mirrors for offline use (basemaps + raster overlays)
+    this.version(2).stores({
+      points: 'id, owner_id, type, visibility, created_at',
+      zones: 'id, owner_id, status, visibility, created_at',
+      tracks: 'id, owner_id, source, visibility, created_at',
+      rasters: 'id, owner_id, kind, visibility, created_at',
+      pendingMutations: '++id, kind, createdAt',
+      pmtiles: 'key, addedAt, kind, remoteUrl, rasterId',
     });
   }
 }
