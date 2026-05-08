@@ -34,6 +34,7 @@ import {
   deleteRasterArchive,
   saveRemoteRasterArchive,
 } from '@/lib/pmtiles';
+import { type AppDiagnostics, checkPmtilesUrl } from '@/lib/diagnostics';
 
 interface PendingPoint {
   lat: number;
@@ -74,6 +75,9 @@ export default function FieldPage() {
   const [flyTo, setFlyTo] = useState<{ lng: number; lat: number; zoom?: number } | null>(null);
   const [fitBounds, setFitBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [syncTick, setSyncTick] = useState(0);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diag, setDiag] = useState<AppDiagnostics | null>(null);
 
   const rasterStateWithPmtiles: RasterLayerState = {
     visibleIds: rasterVisible,
@@ -179,6 +183,48 @@ export default function FieldPage() {
           <span className="text-xs text-slate-500 hidden sm:inline">Speo Field</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => {
+              setDiagOpen(true);
+              setDiagLoading(true);
+              void (async () => {
+                try {
+                  const qs = new URLSearchParams(window.location.search);
+                  const forceLeaflet = Boolean(qs.has('leaflet'));
+                  const forceMaplibre = Boolean(qs.has('maplibre'));
+                  const renderer: 'maplibre' | 'leaflet' = forceLeaflet || !forceMaplibre ? 'leaflet' : 'maplibre';
+
+                  const pmtilesRasters = rasters
+                    .filter((r) => rasterVisible.has(r.id))
+                    .map((r) => {
+                      const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
+                      const url = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
+                      return meta?.format === 'pmtiles' && url ? url : null;
+                    })
+                    .filter((x): x is string => Boolean(x));
+
+                  const pmtiles = await Promise.all(pmtilesRasters.map((u) => checkPmtilesUrl(u)));
+
+                  setDiag({
+                    timeISO: new Date().toISOString(),
+                    url: window.location.href,
+                    renderer,
+                    serviceWorker: {
+                      supported: 'serviceWorker' in navigator,
+                      controlled: Boolean(navigator.serviceWorker?.controller),
+                    },
+                    pmtiles,
+                  });
+                } finally {
+                  setDiagLoading(false);
+                }
+              })();
+            }}
+            className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+            title="Diagnostice (fara DevTools)"
+          >
+            Diag
+          </button>
           <SyncIndicator refreshTick={syncTick} onSynced={() => void reload()} />
           <span className="text-xs text-slate-400 hidden md:inline">{user?.email}</span>
           <button
@@ -522,6 +568,69 @@ export default function FieldPage() {
               }}
               onCancel={() => setShowRasterUpload(false)}
             />
+          </Modal>
+        )}
+
+        {diagOpen && (
+          <Modal>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Diagnostice</h2>
+              <button
+                onClick={() => setDiagOpen(false)}
+                className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+              >
+                Inchide
+              </button>
+            </div>
+            <div className="mt-3 text-xs text-slate-300 space-y-2">
+              {diagLoading && <div>Rulez verificari…</div>}
+              {diag && (
+                <>
+                  <div className="text-slate-400">{diag.timeISO}</div>
+                  <div>
+                    <span className="text-slate-400">Renderer:</span> {diag.renderer}
+                  </div>
+                  <div>
+                    <span className="text-slate-400">ServiceWorker:</span>{' '}
+                    {diag.serviceWorker.supported ? 'supported' : 'missing'} /{' '}
+                    {diag.serviceWorker.controlled ? 'controlled (cache active)' : 'not controlling'}
+                  </div>
+                  <div className="break-all">
+                    <span className="text-slate-400">URL:</span> {diag.url}
+                  </div>
+                  <div className="mt-2 font-semibold">PMTiles (vizibile)</div>
+                  {diag.pmtiles.length === 0 ? (
+                    <div className="text-slate-400">
+                      Niciun PMTiles activ. Bifeaza un LiDAR si apasa din nou Diag.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {diag.pmtiles.map((p) => (
+                        <div key={p.url} className="rounded-lg border border-slate-700 bg-slate-950/40 p-2">
+                          <div className="break-all">
+                            <span className="text-slate-400">url:</span> {p.url}
+                          </div>
+                          <div>
+                            <span className="text-slate-400">range:</span>{' '}
+                            {p.status ?? 'n/a'} {p.contentRange ? `(${p.contentRange})` : ''}
+                          </div>
+                          {p.header && (
+                            <div>
+                              <span className="text-slate-400">zoom:</span> {p.header.minZoom}..{p.header.maxZoom}{' '}
+                              <span className="text-slate-400 ml-2">tileType:</span> {p.header.tileType}
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-slate-400">ok:</span> {p.ok ? 'YES' : 'NO'}
+                            {p.error ? <span className="text-red-300 ml-2">{p.error}</span> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </Modal>
         )}
 
