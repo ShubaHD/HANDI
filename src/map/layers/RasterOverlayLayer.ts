@@ -9,6 +9,7 @@ export interface RasterLayerState {
   visibleIds: Set<string>;
   opacity: Record<string, number>;
   pmtilesUrlByRasterId?: Record<string, string>;
+  pmtilesZoomByRasterId?: Record<string, { minzoom: number; maxzoom: number }>;
 }
 
 export function syncRasterLayers(
@@ -44,6 +45,7 @@ export function syncRasterLayers(
     const isPMTiles = format === 'pmtiles';
     const metaUrl = (r.metadata as { pmtiles_url?: unknown } | null | undefined)?.pmtiles_url;
     const overrideUrl = state.pmtilesUrlByRasterId?.[r.id];
+    const zoomOverride = state.pmtilesZoomByRasterId?.[r.id];
     const url =
       typeof overrideUrl === 'string' && overrideUrl.trim()
         ? overrideUrl.trim()
@@ -54,10 +56,16 @@ export function syncRasterLayers(
     if (!map.getSource(srcId)) {
       if (isPMTiles) {
         const meta = r.metadata as { maxzoom?: unknown; minzoom?: unknown } | null | undefined;
-        const maxzoom = Number(meta?.maxzoom);
-        const minzoomRaw = meta?.minzoom;
+        const maxzoom = Number.isFinite(zoomOverride?.maxzoom)
+          ? zoomOverride!.maxzoom
+          : Number(meta?.maxzoom);
+        const minzoomRaw = zoomOverride?.minzoom ?? meta?.minzoom;
         const minzoom = Number(
-          typeof minzoomRaw === 'number' || typeof minzoomRaw === 'string' ? minzoomRaw : maxzoom,
+          typeof minzoomRaw === 'number' || typeof minzoomRaw === 'string'
+            ? minzoomRaw
+            : Number.isFinite(maxzoom)
+              ? maxzoom
+              : NaN,
         );
         map.addSource(srcId, {
           type: 'raster',

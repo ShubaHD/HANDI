@@ -66,6 +66,7 @@ export default function FieldPage() {
   const [rasterVisible, setRasterVisible] = useState<Set<string>>(new Set());
   const [rasterOpacity, setRasterOpacity] = useState<Record<string, number>>({});
   const [offlinePmtilesById, setOfflinePmtilesById] = useState<Record<string, string>>({});
+  const [pmtilesZoomById, setPmtilesZoomById] = useState<Record<string, { minzoom: number; maxzoom: number }>>({});
   const [showRasterUpload, setShowRasterUpload] = useState(false);
   const [currentBbox, setCurrentBbox] = useState<BBox | null>(null);
 
@@ -78,6 +79,7 @@ export default function FieldPage() {
     visibleIds: rasterVisible,
     opacity: rasterOpacity,
     pmtilesUrlByRasterId: offlinePmtilesById,
+    pmtilesZoomByRasterId: pmtilesZoomById,
   };
 
   const reload = useCallback(async () => {
@@ -305,7 +307,7 @@ export default function FieldPage() {
                 // If user enables a PMTiles raster, force MapLibre renderer (Leaflet cannot render PMTiles).
                 try {
                   const r = rasters.find((x) => x.id === id);
-                  const meta = r?.metadata as { format?: unknown } | null | undefined;
+                  const meta = r?.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
                   const enabling = !rasterVisible.has(id);
                   const isPMTiles = meta?.format === 'pmtiles';
                   const qs = new URLSearchParams(window.location.search);
@@ -313,6 +315,32 @@ export default function FieldPage() {
                     qs.set('maplibre', '1');
                     const nextUrl = `${window.location.pathname}?${qs.toString()}${window.location.hash ?? ''}`;
                     window.history.replaceState({}, '', nextUrl);
+                  }
+
+                  // When enabling, also read PMTiles header to set correct min/max zoom (many archives are z16-only).
+                  const pmUrl = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
+                  if (enabling && isPMTiles && pmUrl) {
+                    void (async () => {
+                      try {
+                        const arch = new PMTiles(pmUrl);
+                        const h = await arch.getHeader();
+                        const minzoom = typeof h.minZoom === 'number' ? h.minZoom : 0;
+                        const maxzoom = typeof h.maxZoom === 'number' ? h.maxZoom : minzoom;
+                        setPmtilesZoomById((p) => ({ ...p, [id]: { minzoom, maxzoom } }));
+                        // Jump to overlay so user sees it immediately.
+                        setFitBounds([
+                          [h.minLon, h.minLat],
+                          [h.maxLon, h.maxLat],
+                        ]);
+                        setFlyTo({
+                          lng: (h.minLon + h.maxLon) / 2,
+                          lat: (h.minLat + h.maxLat) / 2,
+                          zoom: maxzoom,
+                        });
+                      } catch {
+                        /* ignore */
+                      }
+                    })();
                   }
                 } catch {
                   /* ignore */
