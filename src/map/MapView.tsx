@@ -16,12 +16,10 @@ import { addPointsLayer, POINTS_LAYER_ID, updatePointsLayer } from './layers/Poi
 import { addZonesLayer, updateZonesLayer, ZONES_LAYER_ID } from './layers/ZonesLayer';
 import { addTracksLayer, updateLiveTrack, updateTracksLayer } from './layers/TracksLayer';
 import { syncRasterLayers, type RasterLayerState } from './layers/RasterOverlayLayer';
-import { addCavePlansLayer, CAVE_PLANS_LAYER_ID, updateCavePlansLayer } from './layers/CavePlansLayer';
 import { updateCadLayersOnMap } from './layers/CadLayersRenderer';
 import type { CadLayerRow } from '@/features/cad/api';
 import { BaseMapSwitcher } from './controls/BaseMapSwitcher';
 import type { PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
-import type { CavePlan } from '@/features/cavePlans/api';
 
 interface Props {
   points: PointOfInterest[];
@@ -29,8 +27,6 @@ interface Props {
   tracks: Track[];
   rasters: RasterOverlay[];
   rasterState: RasterLayerState;
-  cavePlans: CavePlan[];
-  cavePlansVisible: boolean;
   cadLayers: CadLayerRow[];
   liveTrack: [number, number][];
   drawZoneMode: boolean;
@@ -38,7 +34,6 @@ interface Props {
   onMapClick?: (lng: number, lat: number) => void;
   onPointClick?: (id: string) => void;
   onZoneClick?: (id: string) => void;
-  onCavePlanClick?: (id: string) => void;
   onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
   flyTo?: { lng: number; lat: number; zoom?: number } | null;
   fitBounds?: [[number, number], [number, number]] | null;
@@ -59,8 +54,6 @@ export function MapView({
   tracks,
   rasters,
   rasterState,
-  cavePlans,
-  cavePlansVisible,
   cadLayers,
   liveTrack,
   drawZoneMode,
@@ -68,7 +61,6 @@ export function MapView({
   onMapClick,
   onPointClick,
   onZoneClick,
-  onCavePlanClick,
   onBoundsChange,
   flyTo,
   fitBounds,
@@ -110,7 +102,6 @@ export function MapView({
     onMapClick,
     onPointClick,
     onZoneClick,
-    onCavePlanClick,
     onZoneDrawn,
     onBoundsChange,
   });
@@ -118,7 +109,6 @@ export function MapView({
     onMapClick,
     onPointClick,
     onZoneClick,
-    onCavePlanClick,
     onZoneDrawn,
     onBoundsChange,
   };
@@ -130,13 +120,11 @@ export function MapView({
     addZonesLayer(map);
     addTracksLayer(map);
     addPointsLayer(map);
-    addCavePlansLayer(map);
     updatePointsLayer(map, points);
     updateZonesLayer(map, zones);
     updateTracksLayer(map, tracks);
     updateLiveTrack(map, liveTrack);
     syncRasterLayers(map, rasters, rasterState);
-    updateCavePlansLayer(map, cavePlansVisible ? cavePlans : []);
     updateCadLayersOnMap(map, cadLayers);
   };
 
@@ -291,7 +279,7 @@ export function MapView({
     map.on('click', (e) => {
       if (drawRef.current?.enabled) return;
       const features = map.queryRenderedFeatures(e.point, {
-        layers: [POINTS_LAYER_ID, ZONES_LAYER_ID, CAVE_PLANS_LAYER_ID],
+        layers: [POINTS_LAYER_ID, ZONES_LAYER_ID],
       });
       if (features.length > 0) {
         const f = features[0];
@@ -301,8 +289,6 @@ export function MapView({
           handlersRef.current.onPointClick?.(id);
         } else if (f.layer.id === ZONES_LAYER_ID) {
           handlersRef.current.onZoneClick?.(id);
-        } else if (f.layer.id === CAVE_PLANS_LAYER_ID) {
-          handlersRef.current.onCavePlanClick?.(id);
         }
         return;
       }
@@ -319,12 +305,6 @@ export function MapView({
       map.getCanvas().style.cursor = 'pointer';
     });
     map.on('mouseleave', ZONES_LAYER_ID, () => {
-      map.getCanvas().style.cursor = '';
-    });
-    map.on('mouseenter', CAVE_PLANS_LAYER_ID, () => {
-      map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', CAVE_PLANS_LAYER_ID, () => {
       map.getCanvas().style.cursor = '';
     });
 
@@ -393,13 +373,6 @@ export function MapView({
     if (map.isStyleLoaded()) syncRasterLayers(map, rasters, rasterState);
     else map.once('idle', () => syncRasterLayers(map, rasters, rasterState));
   }, [rasters, rasterState]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (map.isStyleLoaded()) updateCavePlansLayer(map, cavePlansVisible ? cavePlans : []);
-    else map.once('idle', () => updateCavePlansLayer(map, cavePlansVisible ? cavePlans : []));
-  }, [cavePlans, cavePlansVisible]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -490,8 +463,6 @@ export function MapView({
             points={points}
             zones={zones}
             tracks={tracks}
-            cavePlans={cavePlans}
-            cavePlansVisible={cavePlansVisible}
             cadLayers={cadLayers}
             onMapClick={onMapClick}
             onBoundsChange={onBoundsChange}

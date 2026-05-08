@@ -11,8 +11,6 @@ import { classifyCadImport } from './classifyCadLayer';
 import type { ClassifiedCadLayer } from './classifyCadLayer';
 import { parseDxfStereo70Full, type DxfParseDiagnostics, type Stereo70SourceCrs } from './dxfImport';
 import { ImportWizard } from './ImportWizard';
-import { CavePlansPanel } from '@/features/cavePlans/CavePlansPanel';
-import type { CavePlan } from '@/features/cavePlans/api';
 import { createPointsBulk } from '@/features/points/api';
 import { parsePointsCsvToInputs } from '@/features/points/csvImport';
 import { POINT_TYPES, type PointType } from '@/lib/types';
@@ -42,7 +40,6 @@ interface Props {
   cadLayers: CadLayerRow[];
   onRefresh: () => void;
   onZoomTo: (bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
-  onPlansLoaded: (plans: CavePlan[]) => void;
 }
 
 function cadStyleDefaults(row: CadLayerRow): { color: string; width: number; opacity: number } {
@@ -72,7 +69,7 @@ function formatDxfDiagReport(fileName: string, d: DxfParseDiagnostics): string {
   ].join('\n');
 }
 
-export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onPlansLoaded }: Props) {
+export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
@@ -509,17 +506,6 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo, onP
               </ul>
             )}
           </div>
-        </section>
-
-        <section className="border-t border-slate-800">
-          <div className="px-3 pt-3 pb-2">
-            <h3 className="text-sm font-semibold text-white">Planuri individuale</h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Un singur layer MultiLineString per fișier (flux vechi). Folosește secțiunea de mai sus pentru desene
-              complete pe layere.
-            </p>
-          </div>
-          <CavePlansPanel onPlansLoaded={onPlansLoaded} onZoomTo={onZoomTo} />
         </section>
       </div>
 

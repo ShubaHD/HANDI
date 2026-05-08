@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import type { PointOfInterest, Track, Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
-import type { CavePlan } from '@/features/cavePlans/api';
 import type { CadLayerRow } from '@/features/cad/api';
 
 interface ViewportState {
@@ -41,8 +40,6 @@ interface Props {
   points: PointOfInterest[];
   zones: Zone[];
   tracks: Track[];
-  cavePlans: CavePlan[];
-  cavePlansVisible: boolean;
   cadLayers: CadLayerRow[];
   onMapClick?: (lng: number, lat: number) => void;
   onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
@@ -102,8 +99,6 @@ export function LeafletView({
   points,
   zones,
   tracks,
-  cavePlans,
-  cavePlansVisible,
   cadLayers,
   onMapClick,
   onBoundsChange,
@@ -117,7 +112,6 @@ export function LeafletView({
     points?: L.GeoJSON;
     zones?: L.GeoJSON;
     tracks?: L.GeoJSON;
-    cavePlans?: L.GeoJSON;
     cad?: L.LayerGroup;
   }>({});
 
@@ -218,25 +212,6 @@ export function LeafletView({
     layer.addTo(map);
     layersRef.current.tracks = layer;
   }, [tracksFC]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const prev = layersRef.current.cavePlans;
-    if (prev) map.removeLayer(prev);
-    if (!cavePlansVisible) return;
-    const fc: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: cavePlans.map((p) => ({
-        type: 'Feature',
-        properties: { id: p.id, name: p.name ?? '' },
-        geometry: p.geom,
-      })),
-    };
-    const layer = L.geoJSON(fc, { style: () => ({ color: '#a78bfa', weight: 2, opacity: 0.85 }) });
-    layer.addTo(map);
-    layersRef.current.cavePlans = layer;
-  }, [cavePlans, cavePlansVisible]);
 
   useEffect(() => {
     const map = mapRef.current;

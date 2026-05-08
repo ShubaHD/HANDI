@@ -28,7 +28,6 @@ import { startBackgroundSync } from '@/lib/db/syncQueue';
 import { SyncIndicator } from './SyncIndicator';
 import { CadImportPanel } from '@/features/cad/CadImportPanel';
 import { fetchCadImports, fetchCadLayers, type CadImport, type CadLayerRow } from '@/features/cad/api';
-import type { CavePlan } from '@/features/cavePlans/api';
 
 interface PendingPoint {
   lat: number;
@@ -44,8 +43,6 @@ export default function FieldPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [rasters, setRasters] = useState<RasterOverlay[]>([]);
-  const [cavePlans, setCavePlans] = useState<CavePlan[]>([]);
-  const [cavePlansVisible, setCavePlansVisible] = useState(true);
   const [cadImports, setCadImports] = useState<CadImport[]>([]);
   const [cadLayers, setCadLayers] = useState<CadLayerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -305,18 +302,6 @@ export default function FieldPage() {
 
           {activeTab === 'cad' && (
             <div className="flex flex-col h-full min-h-0">
-              <div className="p-3 border-b border-slate-700 flex items-center justify-between gap-2 shrink-0">
-                <div className="text-xs text-slate-400">Overlay planuri simple (MultiLineString)</div>
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={cavePlansVisible}
-                    onChange={(e) => setCavePlansVisible(e.target.checked)}
-                    className="w-4 h-4 accent-brand-500"
-                  />
-                  Layer
-                </label>
-              </div>
               <div className="flex-1 min-h-0 flex flex-col">
                 <CadImportPanel
                   cadImports={cadImports}
@@ -328,7 +313,6 @@ export default function FieldPage() {
                       [b.maxLon, b.maxLat],
                     ])
                   }
-                  onPlansLoaded={setCavePlans}
                 />
               </div>
             </div>
@@ -351,8 +335,6 @@ export default function FieldPage() {
             tracks={tracks}
             rasters={rasters}
             rasterState={rasterState}
-            cavePlans={cavePlans}
-            cavePlansVisible={cavePlansVisible}
             cadLayers={cadLayers}
             liveTrack={liveTrack}
             drawZoneMode={drawZoneMode}
