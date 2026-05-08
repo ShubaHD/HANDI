@@ -35,30 +35,43 @@ export function syncRasterLayers(
   // Adauga / actualizeaza pentru cele vizibile.
   for (const r of rasters) {
     if (!state.visibleIds.has(r.id)) continue;
-    const corners = rasterCornersFromBounds(r.bounds);
-    if (!corners) continue;
     const srcId = SOURCE_PREFIX + r.id;
     const lyrId = LAYER_PREFIX + r.id;
-    const url = publicUrl(r.storage_path);
-    const coordinates: [
-      [number, number],
-      [number, number],
-      [number, number],
-      [number, number],
-    ] = [
-      [corners.minLon, corners.maxLat],
-      [corners.maxLon, corners.maxLat],
-      [corners.maxLon, corners.minLat],
-      [corners.minLon, corners.minLat],
-    ];
     const opacity = state.opacity[r.id] ?? 0.7;
 
+    const format = (r.metadata as { format?: unknown } | null | undefined)?.format;
+    const isPMTiles = format === 'pmtiles';
+    const url = publicUrl(r.storage_path);
+
     if (!map.getSource(srcId)) {
-      map.addSource(srcId, {
-        type: 'image',
-        url,
-        coordinates,
-      });
+      if (isPMTiles) {
+        const maxzoom = Number((r.metadata as { maxzoom?: unknown } | undefined)?.maxzoom);
+        map.addSource(srcId, {
+          type: 'raster',
+          url: `pmtiles://${url}`,
+          tileSize: 256,
+          ...(Number.isFinite(maxzoom) ? { maxzoom } : {}),
+        });
+      } else {
+        const corners = rasterCornersFromBounds(r.bounds);
+        if (!corners) continue;
+        const coordinates: [
+          [number, number],
+          [number, number],
+          [number, number],
+          [number, number],
+        ] = [
+          [corners.minLon, corners.maxLat],
+          [corners.maxLon, corners.maxLat],
+          [corners.maxLon, corners.minLat],
+          [corners.minLon, corners.minLat],
+        ];
+        map.addSource(srcId, {
+          type: 'image',
+          url,
+          coordinates,
+        });
+      }
     }
 
     if (!map.getLayer(lyrId)) {

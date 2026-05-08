@@ -27,30 +27,36 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isPMTiles = Boolean(file?.name.toLowerCase().endsWith('.pmtiles'));
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setError('Alege un fisier (PNG / JPG)');
+      setError('Alege un fisier (PNG / JPG / PMTiles)');
       return;
     }
-    const bbox: BBox = {
-      minLon: parseFloat(minLon),
-      minLat: parseFloat(minLat),
-      maxLon: parseFloat(maxLon),
-      maxLat: parseFloat(maxLat),
-    };
-    if (
-      !isFinite(bbox.minLon) ||
-      !isFinite(bbox.minLat) ||
-      !isFinite(bbox.maxLon) ||
-      !isFinite(bbox.maxLat)
-    ) {
-      setError('Coordonate invalide');
-      return;
-    }
-    if (bbox.minLon >= bbox.maxLon || bbox.minLat >= bbox.maxLat) {
-      setError('Bounding box invalid (min < max)');
-      return;
+    const bbox: BBox = isPMTiles
+      ? { minLon: 0, minLat: 0, maxLon: 0, maxLat: 0 }
+      : {
+          minLon: parseFloat(minLon),
+          minLat: parseFloat(minLat),
+          maxLon: parseFloat(maxLon),
+          maxLat: parseFloat(maxLat),
+        };
+    if (!isPMTiles) {
+      if (
+        !isFinite(bbox.minLon) ||
+        !isFinite(bbox.minLat) ||
+        !isFinite(bbox.maxLon) ||
+        !isFinite(bbox.maxLat)
+      ) {
+        setError('Coordonate invalide');
+        return;
+      }
+      if (bbox.minLon >= bbox.maxLon || bbox.minLat >= bbox.maxLat) {
+        setError('Bounding box invalid (min < max)');
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -61,6 +67,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
         file,
         bbox,
         visibility,
+        metadata: isPMTiles ? { format: 'pmtiles' } : { format: 'image' },
       });
       onCreated();
     } catch (e) {
@@ -108,16 +115,17 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
       </label>
 
       <label className="block">
-        <span className="text-xs uppercase text-slate-400">Imagine (PNG / JPG georeferentiat)</span>
+        <span className="text-xs uppercase text-slate-400">Fișier (PNG/JPG georeferențiat sau PMTiles)</span>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,.pmtiles"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200"
         />
       </label>
 
-      <div>
+      {!isPMTiles && (
+        <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs uppercase text-slate-400">Bounding box (lat/lon)</span>
           {defaultBbox && (
@@ -164,7 +172,8 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
             className="px-2 py-1.5 bg-slate-900 border border-slate-700 rounded font-mono"
           />
         </div>
-      </div>
+        </div>
+      )}
 
       <div>
         <label className="block text-xs uppercase text-slate-400 mb-1">Vizibilitate</label>

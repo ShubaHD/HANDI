@@ -58,6 +58,18 @@ Aplicație web PWA pentru clubul de speologie. Marchează puncte de interes (pe�
 - Render ca `ImageSource` în MapLibre, toggle individual + slider opacitate
 - Listă în tab-ul "Rasters" cu zoom-to + delete
 
+#### LiDAR GeoTIFF (online) ca overlay PMTiles
+
+Pentru LiDAR mare (GeoTIFF), workflow-ul recomandat este:
+
+- **1) Convertește GeoTIFF → PMTiles** (local, Windows):
+  - Instalează QGIS, apoi exportă un **hillshade** (sau un raster vizualizabil) în WGS84 (EPSG:4326) sau WebMercator (EPSG:3857).
+  - Generează tiles și împachetează în `.pmtiles` (un singur fișier).
+- **2) În HANDI**: tab **Rasters** → **Upload raster** → alege fișierul `.pmtiles` → vizibilitate **Club** → salvează.
+- **3) Pe hartă**: activezi overlay-ul din lista de rasters și ajustezi opacitatea.
+
+Notă: conversia GeoTIFF→PMTiles necesită tooling GIS local; aplicația face doar upload + randare (nu rulează GDAL pe server).
+
 ---
 
 ## Setup
