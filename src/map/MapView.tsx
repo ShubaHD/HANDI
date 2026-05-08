@@ -449,11 +449,13 @@ export function MapView({
     );
   };
 
-  // MapLibre is the default renderer (needed for PMTiles raster overlays).
-  // Leaflet remains available for troubleshooting via ?leaflet=1
-  const useLeaflet =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).has('leaflet');
+  // Default renderer: Leaflet (most compatible).
+  // Use MapLibre explicitly via ?maplibre=1 (needed for PMTiles raster overlays).
+  // Force Leaflet via ?leaflet=1.
+  const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const forceLeaflet = Boolean(qs?.has('leaflet'));
+  const forceMaplibre = Boolean(qs?.has('maplibre'));
+  const useLeaflet = forceLeaflet || !forceMaplibre;
 
   if (useLeaflet) {
     return (
