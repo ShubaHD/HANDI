@@ -69,6 +69,7 @@ export function MapView({
   const mapRef = useRef<MlMap | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [hud, setHud] = useState<{ lng: number; lat: number; zoom: number } | null>(null);
   const [base, setBase] = useState<BaseMapDef>(() => {
     try {
       const qs = new URLSearchParams(window.location.search);
@@ -296,6 +297,16 @@ export function MapView({
         maxLat: b.getNorth(),
       });
     });
+
+    if (debugEnabled) {
+      map.on('move', () => {
+        const c = map.getCenter();
+        setHud({ lng: c.lng, lat: c.lat, zoom: map.getZoom() });
+      });
+      // initialize HUD quickly
+      const c0 = map.getCenter();
+      setHud({ lng: c0.lng, lat: c0.lat, zoom: map.getZoom() });
+    }
 
     map.on('click', (e) => {
       if (drawRef.current?.enabled) return;
@@ -547,6 +558,11 @@ export function MapView({
           {mapDebugDetails.lines.map((l) => (
             <div key={l}>{l}</div>
           ))}
+        </div>
+      )}
+      {hud && (
+        <div className="absolute bottom-3 right-3 z-20 bg-slate-950/70 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-[11px] font-mono">
+          z={hud.zoom.toFixed(2)} lng={hud.lng.toFixed(5)} lat={hud.lat.toFixed(5)}
         </div>
       )}
 
