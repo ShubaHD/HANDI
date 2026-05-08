@@ -53,7 +53,6 @@ function annotationsToGeoJSON(
         visibility: a.visibility,
         bearing_deg: a.bearing_deg,
         symbol_label: a.symbol ? symbolLabel(a.symbol) : '',
-        icon: a.symbol ? `sym-${a.symbol}` : '',
       },
     });
 
@@ -92,8 +91,6 @@ function computeBearingDeg(lon1: number, lat1: number, lon2: number, lat2: numbe
 
 export function addAnnotationsLayer(map: MlMap) {
   if (map.getSource(SOURCE_ID)) return;
-
-  ensureSymbolImages(map);
 
   map.addSource(SOURCE_ID, {
     type: 'geojson',
@@ -138,17 +135,12 @@ export function addAnnotationsLayer(map: MlMap) {
     minzoom: 10,
     filter: ['==', ['get', 'kind'], 'symbol'] as never,
     layout: {
-      'icon-image': ['get', 'icon'] as never,
-      'icon-size': 0.6,
-      'icon-allow-overlap': true,
-      'icon-optional': true,
       'text-field': ['get', 'symbol_label'],
-      'text-size': 14,
+      'text-size': 18,
       'text-allow-overlap': true,
       'text-anchor': 'center',
     },
     paint: {
-      'icon-color': '#a855f7',
       'text-color': '#a855f7',
       'text-halo-color': '#fff',
       'text-halo-width': 1.2,
@@ -182,40 +174,5 @@ export function updateAnnotationsLayer(map: MlMap, annotations: Annotation[]) {
   const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
   if (!src) return;
   src.setData(annotationsToGeoJSON(annotations));
-}
-
-function ensureSymbolImages(map: MlMap) {
-  const symbols = [
-    'diaclaza',
-    'dolina',
-    'abrupt',
-    'pestera',
-    'intrebare',
-    'mirare',
-    'ravene',
-    'ponoare',
-    'izbuc',
-    'depresiune_hachuri',
-    'alunecare',
-  ] as const;
-
-  for (const s of symbols) {
-    const name = `sym-${s}`;
-    if (map.hasImage(name)) continue;
-    void map
-      .loadImage(`/symbols/${s}.svg`)
-      .then((res) => {
-        const img = (res as unknown as { data?: unknown }).data ?? res;
-        if (!img) return;
-        try {
-          if (!map.hasImage(name)) map.addImage(name, img as never, { sdf: true });
-        } catch {
-          /* ignore */
-        }
-      })
-      .catch(() => {
-        /* ignore */
-      });
-  }
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
-import type { Annotation, PointOfInterest, Track, Zone } from '@/lib/types';
+import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
 
@@ -226,22 +226,58 @@ export function LeafletView({
         if (type === 'label') {
           return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
         }
-        return L.circleMarker(latlng, { radius: 6, color: '#22c55e', weight: 2, fillOpacity: 0.6 });
+        const color = POINT_TYPES.find((t) => t.value === type)?.color ?? '#22c55e';
+        return L.circleMarker(latlng, {
+          radius: 6,
+          color,
+          weight: 2,
+          fillOpacity: 0.6,
+          fillColor: color,
+        });
       },
       onEachFeature: (f, lyr) => {
         const props = (f.properties as { name?: string; type?: string } | null) ?? null;
         const name = props?.name ?? '';
         const type = props?.type ?? 'other';
         if (!name) return;
-        const lines: string[] = [`<div style="font-weight:600">${escapeHtml(name)}</div>`];
-        lines.push(`<div style="font-size:11px;opacity:.8">Punct • ${escapeHtml(type)}</div>`);
-        const html = lines.join('');
-        lyr.on('mouseover', (e: L.LeafletMouseEvent) => scheduleHover(e.latlng, html, 12));
+        // Permanent label (like MapLibre) from zoom>=12
+        const tooltip = L.tooltip({
+          permanent: true,
+          direction: 'top',
+          offset: L.point(0, -10),
+          opacity: 0.95,
+          className: 'handi-point-label',
+        }).setContent(escapeHtml(name));
+
+        lyr.bindTooltip(tooltip);
+
+        const meta = POINT_TYPES.find((t) => t.value === type)?.label ?? type;
+        const hoverHtml = [
+          `<div style="font-weight:600">${escapeHtml(name)}</div>`,
+          `<div style="font-size:11px;opacity:.8">Punct • ${escapeHtml(meta)}</div>`,
+        ].join('');
+        lyr.on('mouseover', (e: L.LeafletMouseEvent) => scheduleHover(e.latlng, hoverHtml, 12));
         lyr.on('mouseout', () => clearHover());
       },
     });
     layer.addTo(map);
     layersRef.current.points = layer;
+
+    const syncPointLabels = () => {
+      const z = map.getZoom();
+      layer.eachLayer((l) => {
+        const anyL = l as unknown as { getTooltip?: () => unknown; openTooltip?: () => void; closeTooltip?: () => void };
+        const tt = anyL.getTooltip?.();
+        if (!tt) return;
+        if (z >= 12) anyL.openTooltip?.();
+        else anyL.closeTooltip?.();
+      });
+    };
+    syncPointLabels();
+    map.on('zoomend', syncPointLabels);
+    return () => {
+      map.off('zoomend', syncPointLabels);
+    };
   }, [pointsFC, clearHover, scheduleHover]);
 
   useEffect(() => {
@@ -312,12 +348,9 @@ export function LeafletView({
         }
 
         const sym = symbolLabel(a.symbol ?? 'other');
-        const src = a.symbol ? `/symbols/${a.symbol}.svg` : '';
         const icon = L.divIcon({
           className: 'handi-annotation-icon',
-          html: src
-            ? `<img src="${escapeHtml(src)}" alt="" style="width:18px;height:18px;color:#a855f7"/>`
-            : `<div style="font-size:18px;line-height:18px">${escapeHtml(sym)}</div>`,
+          html: `<div style="font-size:18px;line-height:18px;color:#a855f7">${escapeHtml(sym)}</div>`,
           iconSize: [18, 18],
           iconAnchor: [9, 9],
         });
