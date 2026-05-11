@@ -1,6 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import type { Visibility } from '@/lib/types';
-import type { CadLayerKind, ClassifiedCadLayer } from './classifyCadLayer';
+import {
+  type CadLayerKind,
+  type ClassifiedCadLayer,
+  defaultLabelBehaviorForKind,
+} from './classifyCadLayer';
 import type { FeatureCollection } from 'geojson';
 import { toFeatureCollection } from './classifyCadLayer';
 import { ensureCadFeatureCollectionIds } from './cadFeatureIds';
@@ -153,6 +157,7 @@ export async function uploadCadImport(args: {
       color: ov?.color,
       width: ov?.width,
       opacity: ov?.opacity,
+      ...defaultLabelBehaviorForKind(kind),
     };
     const fc = ensureCadFeatureCollectionIds(toFeatureCollection(l.features));
     return {

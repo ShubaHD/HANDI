@@ -53,4 +53,13 @@ body {
   border: none;
   box-shadow: none;
   padding: 0;
+  writing-mode: horizontal-tb;
+  max-width: 280px;
+}
+
+.leaflet-tooltip.handi-annot-text-leaflet .leaflet-tooltip-content {
+  display: inline-block;
+  text-align: left;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }

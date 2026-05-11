@@ -187,8 +187,8 @@ export function BaseMapSwitcher({
           <div className="mt-2 space-y-2 text-xs">
             <p className="text-slate-500 leading-snug">
               Descarca tile-uri pentru dreptunghiul curent al hartii (OpenTopoMap sau Esri), apoi salveaza ca
-              PMTiles local. Respecta termenii furnizorilor. Hartile offline PMTiles merg cel mai bine cu{' '}
-              <code className="text-slate-400">?maplibre=1</code>.
+              PMTiles local. Respecta termenii furnizorilor. La selectare, basemap-ul offline foloseste automat
+              randarea MapLibre (PMTiles nu merge pe Leaflet).
             </p>
             {!viewportBbox ? (
               <div className="text-amber-200/90">Nu avem inca bbox — misca harta putin.</div>

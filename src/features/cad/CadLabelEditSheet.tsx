@@ -8,6 +8,8 @@ interface Props {
   error: string | null;
   onClose: () => void;
   onSave: (text: string) => void;
+  /** Șterge punctul / eticheta din stratul CAD (după confirmare în părinte). */
+  onDelete?: () => void | Promise<void>;
 }
 
 export function CadLabelEditSheet({
@@ -18,6 +20,7 @@ export function CadLabelEditSheet({
   error,
   onClose,
   onSave,
+  onDelete,
 }: Props) {
   const [text, setText] = useState(initialText);
 
@@ -61,23 +64,35 @@ export function CadLabelEditSheet({
           className="w-full min-h-[120px] px-3 py-3 rounded-xl bg-slate-900 border border-slate-600 text-base text-white focus:outline-none focus:border-brand-500 touch-manipulation"
         />
         {error && <div className="text-sm text-red-300">{error}</div>}
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-800 text-base touch-manipulation"
-          >
-            Anulează
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => onSave(text.trim())}
-            className="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-medium text-base touch-manipulation disabled:opacity-50"
-          >
-            {saving ? 'Salvez…' : 'Salvează'}
-          </button>
+        <div className="flex flex-col gap-2 pt-1">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-800 text-base touch-manipulation"
+            >
+              Anulează
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => onSave(text.trim())}
+              className="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-medium text-base touch-manipulation disabled:opacity-50"
+            >
+              {saving ? 'Salvez…' : 'Salvează'}
+            </button>
+          </div>
+          {onDelete && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void onDelete()}
+              className="w-full py-3 rounded-xl border border-red-900/70 text-red-300 hover:bg-red-950/50 text-base touch-manipulation disabled:opacity-50"
+            >
+              Șterge eticheta de pe hartă
+            </button>
+          )}
         </div>
       </div>
     </div>

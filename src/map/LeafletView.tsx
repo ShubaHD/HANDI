@@ -7,6 +7,7 @@ import { pointDisplayColorFromProps } from '@/features/points/pointStyle';
 import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
+import { usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
 import { CAD_FEATURE_ID_KEY, type CadLabelEditTapPayload } from '@/features/cad/cadFeatureIds';
 import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from '@/features/cad/cadMapLabels';
 
@@ -50,6 +51,10 @@ interface Props {
   cadLayers: CadLayerRow[];
   /** Când panoul de adnotări plasează pe hartă: nu interceptăm click-ul pe etichete CAD. */
   annotationPlacementMode?: boolean;
+  /** Mod creion: traseu liber pe hartă (fără același flux ca click-urile de adnotare). */
+  sketchMode?: boolean;
+  sketchStrokeColor?: string;
+  onSketchComplete?: (line: GeoJSON.LineString) => void;
   /** Click pe marcaj punct → trimite tot coordonatele (plasare punct nou). */
   pointPlacementPickMode?: boolean;
   onMapClick?: (lng: number, lat: number) => void;
@@ -143,6 +148,9 @@ export function LeafletView({
   annotations,
   cadLayers,
   annotationPlacementMode = false,
+  sketchMode = false,
+  sketchStrokeColor = '#f97316',
+  onSketchComplete,
   pointPlacementPickMode = false,
   onMapClick,
   onCadLabelTap,
@@ -154,9 +162,13 @@ export function LeafletView({
   const onMapClickRef = useRef(onMapClick);
   const onBoundsChangeRef = useRef(onBoundsChange);
   const pointPlacementPickModeRef = useRef(pointPlacementPickMode);
+  const onSketchCompleteRef = useRef(onSketchComplete);
+  const sketchModeRef = useRef(sketchMode);
   onMapClickRef.current = onMapClick;
   onBoundsChangeRef.current = onBoundsChange;
   pointPlacementPickModeRef.current = pointPlacementPickMode;
+  onSketchCompleteRef.current = onSketchComplete;
+  sketchModeRef.current = sketchMode;
 
   const divRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -222,7 +234,10 @@ export function LeafletView({
     const last = readLastViewport();
     map.setView([last.lat, last.lng], last.zoom);
 
-    map.on('click', (e) => onMapClickRef.current?.(e.latlng.lng, e.latlng.lat));
+    map.on('click', (e) => {
+      if (sketchModeRef.current) return;
+      onMapClickRef.current?.(e.latlng.lng, e.latlng.lat);
+    });
     map.on('moveend', () => {
       const c = map.getCenter();
       writeLastViewport({ lng: c.lng, lat: c.lat, zoom: map.getZoom() });
@@ -420,7 +435,7 @@ export function LeafletView({
             interactive: true,
           });
           const tip = document.createElement('div');
-          tip.style.cssText = `font-size:${fs}px;line-height:1.25;font-weight:600;color:${col};text-shadow:0 0 2px #0f172a,0 0 8px #0f172a;max-width:280px;white-space:pre-wrap;word-break:break-word`;
+          tip.style.cssText = `display:inline-block;font-size:${fs}px;line-height:1.25;font-weight:600;color:${col};text-shadow:0 0 2px #0f172a,0 0 8px #0f172a;max-width:280px;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;writing-mode:horizontal-tb;text-align:left`;
           tip.textContent = raw;
           m.bindTooltip(tip, {
             permanent: true,
@@ -453,34 +468,155 @@ export function LeafletView({
         continue;
       }
 
-      if (a.kind === 'arrow' && a.geom.type === 'LineString') {
+      if ((a.kind === 'arrow' || a.kind === 'sketch') && a.geom.type === 'LineString') {
         const coords = a.geom.coordinates;
         if (coords.length < 2) continue;
         const latlngs = coords.map((c) => L.latLng(c[1], c[0]));
-        const arrowColor = a.style?.arrowColor ?? '#22c55e';
-        const line = L.polyline(latlngs, { color: arrowColor, weight: 3, opacity: 0.9 });
+        const stroke =
+          typeof a.style?.arrowColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(a.style.arrowColor)
+            ? a.style.arrowColor
+            : a.kind === 'sketch'
+              ? '#f97316'
+              : '#22c55e';
+        const line = L.polyline(latlngs, {
+          color: stroke,
+          weight: a.kind === 'sketch' ? 2.5 : 3,
+          opacity: 0.88,
+        });
+        const tip = a.kind === 'sketch' ? 'Creion' : 'Săgeată';
         line.on('mouseover', (e) =>
-          scheduleHover(e.latlng, `<div style="font-weight:600">Săgeată</div>`, 0),
+          scheduleHover(e.latlng, `<div style="font-weight:600">${escapeHtml(tip)}</div>`, 0),
         );
         line.on('mouseout', () => clearHover());
         group.addLayer(line);
 
-        const p1 = coords[coords.length - 2];
-        const p2 = coords[coords.length - 1];
-        const bearing = a.bearing_deg ?? computeBearingDeg(p1[0], p1[1], p2[0], p2[1]);
-        const headIcon = L.divIcon({
-          className: 'handi-arrow-head',
-          html: `<div style="transform: rotate(${bearing}deg); font-size:16px; line-height:16px;color:${escapeHtml(arrowColor)}">➤</div>`,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-        });
-        group.addLayer(L.marker(L.latLng(p2[1], p2[0]), { icon: headIcon, interactive: false }));
+        if (a.kind === 'arrow') {
+          const p1 = coords[coords.length - 2];
+          const p2 = coords[coords.length - 1];
+          const bearing = a.bearing_deg ?? computeBearingDeg(p1[0], p1[1], p2[0], p2[1]);
+          const headIcon = L.divIcon({
+            className: 'handi-arrow-head',
+            html: `<div style="transform: rotate(${bearing}deg); font-size:16px; line-height:16px;color:${escapeHtml(stroke)}">➤</div>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8],
+          });
+          group.addLayer(L.marker(L.latLng(p2[1], p2[0]), { icon: headIcon, interactive: false }));
+        }
       }
     }
 
     group.addTo(map);
     layersRef.current.annotations = group;
   }, [annotations, clearHover, scheduleHover]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !sketchMode) return;
+    const container = map.getContainer();
+    let drawing = false;
+    let pts: L.LatLng[] = [];
+    let preview: L.Polyline | null = null;
+    let lastPx: L.Point | null = null;
+    const color = sketchStrokeColor;
+
+    const commit = () => {
+      if (!drawing) return;
+      drawing = false;
+      map.dragging.enable();
+      preview?.remove();
+      preview = null;
+      if (pts.length >= 2) {
+        const coordinates = pts.map((p) => [p.lng, p.lat] as [number, number]);
+        onSketchCompleteRef.current?.({ type: 'LineString', coordinates });
+      }
+      pts = [];
+      lastPx = null;
+    };
+
+    const add = (latlng: L.LatLng) => {
+      const px = map.latLngToLayerPoint(latlng);
+      if (lastPx) {
+        const dx = px.x - lastPx.x;
+        const dy = px.y - lastPx.y;
+        if (dx * dx + dy * dy < 9) return;
+      }
+      lastPx = px;
+      pts.push(latlng);
+      preview?.setLatLngs(pts);
+    };
+
+    const onMouseDown = (ev: MouseEvent) => {
+      if (ev.button !== 0) return;
+      if (!container.contains(ev.target as Node)) return;
+      drawing = true;
+      pts = [];
+      lastPx = null;
+      const latlng = map.mouseEventToLatLng(ev);
+      pts.push(latlng);
+      lastPx = map.latLngToLayerPoint(latlng);
+      preview?.remove();
+      preview = L.polyline(pts, { color, weight: 3, opacity: 0.9 }).addTo(map);
+      map.dragging.disable();
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!drawing || !preview) return;
+      add(map.mouseEventToLatLng(ev));
+    };
+
+    const onMouseUp = () => commit();
+
+    const touchToLatLng = (touch: Touch) => {
+      const r = container.getBoundingClientRect();
+      return map.containerPointToLatLng(L.point(touch.clientX - r.left, touch.clientY - r.top));
+    };
+
+    const onTouchStart = (ev: TouchEvent) => {
+      if (ev.touches.length !== 1 || !container.contains(ev.target as Node)) return;
+      ev.preventDefault();
+      drawing = true;
+      pts = [];
+      lastPx = null;
+      const latlng = touchToLatLng(ev.touches[0]);
+      pts.push(latlng);
+      lastPx = map.latLngToLayerPoint(latlng);
+      preview?.remove();
+      preview = L.polyline(pts, { color, weight: 3, opacity: 0.9 }).addTo(map);
+      map.dragging.disable();
+    };
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (!drawing || !preview || ev.touches.length !== 1) return;
+      ev.preventDefault();
+      add(touchToLatLng(ev.touches[0]));
+    };
+
+    const onTouchEnd = () => commit();
+
+    container.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('mousemove', onMouseMove, true);
+    window.addEventListener('mouseup', onMouseUp, true);
+    container.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
+    window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+    window.addEventListener('touchend', onTouchEnd, true);
+    window.addEventListener('touchcancel', onTouchEnd, true);
+
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('mousemove', onMouseMove, true);
+      window.removeEventListener('mouseup', onMouseUp, true);
+      container.removeEventListener('touchstart', onTouchStart, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('touchmove', onTouchMove, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('touchend', onTouchEnd, true);
+      window.removeEventListener('touchcancel', onTouchEnd, true);
+      if (drawing) {
+        map.dragging.enable();
+        preview?.remove();
+      }
+    };
+  }, [sketchMode, sketchStrokeColor]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -491,6 +627,17 @@ export function LeafletView({
     for (const row of cadLayers) {
       if (!row.visible) continue;
       const st = styleCad(row);
+      const rowStyle = row.style as { cadLabelMinZoom?: unknown; cadLabelMaxZoom?: unknown };
+      const minZ =
+        typeof rowStyle.cadLabelMinZoom === 'number' && Number.isFinite(rowStyle.cadLabelMinZoom)
+          ? rowStyle.cadLabelMinZoom
+          : undefined;
+      const maxZ =
+        typeof rowStyle.cadLabelMaxZoom === 'number' && Number.isFinite(rowStyle.cadLabelMaxZoom)
+          ? rowStyle.cadLabelMaxZoom
+          : undefined;
+      const cadLabelLocked = (row.style as { cadLabelLocked?: boolean }).cadLabelLocked === true;
+
       const layer = L.geoJSON(row.features as GeoJSON.GeoJsonObject, {
         style: () => st,
         pointToLayer: (feat, latlng) => {
@@ -500,15 +647,25 @@ export function LeafletView({
           const props = (feat.properties as Record<string, unknown> | null) ?? {};
           const label = cadFeatureLabelText(props);
 
-          if ((row.kind === 'labels' || row.kind === 'caves') && label && !isJunkCadPlaceholderLabel(label)) {
+          if (usesCadLabelRendering(row.kind) && label && !isJunkCadPlaceholderLabel(label)) {
+            const strokeOp = st.opacity ?? 1;
+            const fillOp = Math.min(0.45, (st.opacity ?? 0.85) * 0.5);
             const m = L.circleMarker(latlng, {
               radius: 12,
               color: st.color,
               weight: 1,
-              opacity: st.opacity ?? 1,
+              opacity: strokeOp,
               fillColor: st.color,
-              fillOpacity: Math.min(0.45, (st.opacity ?? 0.85) * 0.5),
+              fillOpacity: fillOp,
             });
+            const cm = m as L.CircleMarker & {
+              handiCadTextLabel?: boolean;
+              handiCadDefStrokeOp?: number;
+              handiCadDefFillOp?: number;
+            };
+            cm.handiCadTextLabel = true;
+            cm.handiCadDefStrokeOp = strokeOp;
+            cm.handiCadDefFillOp = fillOp;
             m.bindTooltip(escapeHtml(label), {
               permanent: true,
               direction: 'top',
@@ -532,7 +689,7 @@ export function LeafletView({
 
           // POINT entities on non-label layers, or empty label rows: no default pin.
           return L.circleMarker(latlng, {
-            radius: row.kind === 'labels' || row.kind === 'caves' ? 0 : 3,
+            radius: usesCadLabelRendering(row.kind) ? 0 : 3,
             opacity: 0,
             fillOpacity: 0,
             weight: 0,
@@ -542,8 +699,9 @@ export function LeafletView({
           const props = (f.properties as Record<string, unknown> | null) ?? {};
           if (
             f.geometry?.type === 'Point' &&
-            (row.kind === 'labels' || row.kind === 'caves') &&
-            onCadLabelTap
+            usesCadLabelRendering(row.kind) &&
+            onCadLabelTap &&
+            !cadLabelLocked
           ) {
             const lbl = cadFeatureLabelText(props);
             if (lbl && !isJunkCadPlaceholderLabel(lbl)) {
@@ -576,10 +734,51 @@ export function LeafletView({
           lyr.on('mouseout', () => clearHover());
         },
       });
+      if (minZ != null || maxZ != null) {
+        (layer as L.Layer & { handiCadZoomMeta?: { min?: number; max?: number } }).handiCadZoomMeta = {
+          min: minZ,
+          max: maxZ,
+        };
+      }
       group.addLayer(layer);
     }
+
+    const syncCadTextLabelZoom = () => {
+      const z = map.getZoom();
+      group.eachLayer((gj) => {
+        const zm = (gj as L.Layer & { handiCadZoomMeta?: { min?: number; max?: number } }).handiCadZoomMeta;
+        if (!zm) return;
+        let show = true;
+        if (zm.min != null && z < zm.min) show = false;
+        if (zm.max != null && z >= zm.max) show = false;
+        (gj as L.GeoJSON).eachLayer((lyr) => {
+          const t = lyr as L.CircleMarker & {
+            handiCadTextLabel?: boolean;
+            handiCadDefStrokeOp?: number;
+            handiCadDefFillOp?: number;
+          };
+          if (!t.handiCadTextLabel) return;
+          const so = t.handiCadDefStrokeOp ?? 1;
+          const fo = t.handiCadDefFillOp ?? 0.4;
+          if (show) {
+            t.setStyle({ opacity: so, fillOpacity: fo, weight: 1 });
+            t.openTooltip?.();
+          } else {
+            t.setStyle({ opacity: 0, fillOpacity: 0, weight: 0 });
+            t.closeTooltip?.();
+          }
+        });
+      });
+    };
+    map.on('zoomend', syncCadTextLabelZoom);
+    syncCadTextLabelZoom();
+
     group.addTo(map);
     layersRef.current.cad = group;
+
+    return () => {
+      map.off('zoomend', syncCadTextLabelZoom);
+    };
   }, [cadLayers, clearHover, scheduleHover, onCadLabelTap, annotationPlacementMode]);
 
   // viewport controls

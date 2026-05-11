@@ -85,7 +85,7 @@ export interface RasterOverlay {
   created_at: string;
 }
 
-export type AnnotationKind = 'symbol' | 'text' | 'arrow';
+export type AnnotationKind = 'symbol' | 'text' | 'arrow' | 'sketch';
 
 /** Opțional, persistat în `annotations.style` (JSON). */
 export type AnnotationStyle = {

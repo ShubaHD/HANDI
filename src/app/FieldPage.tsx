@@ -42,6 +42,7 @@ import {
   cadLabelTextFromProps,
   ensureCadFeatureCollectionIds,
   findCadPointLabelFeatureIndex,
+  removeCadFeatureAtIndex,
   updateCadPointLabelInCollection,
 } from '@/features/cad/cadFeatureIds';
 import {
@@ -56,6 +57,7 @@ import { safeCreateAnnotation, safeDeleteAnnotation, safeUpdateAnnotation } from
 function annotPreviewLabel(a: Annotation): string {
   if (a.kind === 'text') return (a.text ?? '').trim().slice(0, 36) || 'Text';
   if (a.kind === 'arrow') return 'Săgeată';
+  if (a.kind === 'sketch') return 'Creion';
   return `Simbol ${a.symbol ?? ''}`;
 }
 
@@ -96,15 +98,19 @@ export default function FieldPage() {
   /** Editare din tabul Puncte (formular separat de overlay-ul de pe hartă). */
   const [pointListEdit, setPointListEdit] = useState<PointOfInterest | null>(null);
 
-  const [annotMode, setAnnotMode] = useState<'off' | 'symbol' | 'text' | 'arrow'>('off');
+  const [annotMode, setAnnotMode] = useState<'off' | 'symbol' | 'text' | 'arrow' | 'sketch'>('off');
   const [annotVisibility, setAnnotVisibility] = useState<Visibility>('club');
   const [annotSymbol, setAnnotSymbol] = useState<AnnotationSymbol>('dolina');
   const [annotText, setAnnotText] = useState('');
   const [annotArrowColor, setAnnotArrowColor] = useState('#22c55e');
+  const [annotSketchColor, setAnnotSketchColor] = useState('#f97316');
   const [annotTextSizePx, setAnnotTextSizePx] = useState(16);
   const [annotTextColor, setAnnotTextColor] = useState('#fef08a');
   const [arrowStart, setArrowStart] = useState<{ lon: number; lat: number } | null>(null);
-  const [annotEdit, setAnnotEdit] = useState<{ id: string; kind: 'text' | 'arrow' | 'symbol' } | null>(null);
+  const [annotEdit, setAnnotEdit] = useState<{
+    id: string;
+    kind: 'text' | 'arrow' | 'symbol' | 'sketch';
+  } | null>(null);
   const [annotEditText, setAnnotEditText] = useState('');
   const [annotEditSizePx, setAnnotEditSizePx] = useState(16);
   const [annotEditColor, setAnnotEditColor] = useState('#fef08a');
@@ -218,6 +224,7 @@ export default function FieldPage() {
     (p: CadLabelEditTapPayload) => {
       const row = cadLayers.find((r) => r.id === p.layerRowId);
       if (!row) return;
+      if ((row.style as { cadLabelLocked?: boolean }).cadLabelLocked === true) return;
       const idx = findCadPointLabelFeatureIndex(row.features, {
         fid: p.featureFid,
         lon: p.lon,
@@ -269,6 +276,29 @@ export default function FieldPage() {
     [cadLabelEdit, cadLayers, reload],
   );
 
+  const deleteCadLabelEdit = useCallback(async () => {
+    if (!cadLabelEdit) return;
+    if (!(await ask('Ștergi această etichetă de pe stratul CAD?'))) return;
+    const row = cadLayers.find((r) => r.id === cadLabelEdit.layerRowId);
+    if (!row) {
+      setCadLabelErr('Stratul CAD nu mai este disponibil.');
+      return;
+    }
+    setCadLabelSaving(true);
+    setCadLabelErr(null);
+    try {
+      const patched = removeCadFeatureAtIndex(row.features, cadLabelEdit.featureIndex);
+      const withIds = ensureCadFeatureCollectionIds(patched);
+      await updateCadLayer(row.id, { features: withIds });
+      setCadLabelEdit(null);
+      await reload();
+    } catch (e) {
+      setCadLabelErr(e instanceof Error ? e.message : 'Ștergere eșuată');
+    } finally {
+      setCadLabelSaving(false);
+    }
+  }, [ask, cadLabelEdit, cadLayers, reload]);
+
   const removeAnnot = async (id: string) => {
     if (!(await ask('Stergi aceasta adnotare?'))) return;
     try {
@@ -306,9 +336,9 @@ export default function FieldPage() {
   };
 
   const saveArrowColorEdit = async () => {
-    if (!annotEdit || annotEdit.kind !== 'arrow') return;
+    if (!annotEdit || (annotEdit.kind !== 'arrow' && annotEdit.kind !== 'sketch')) return;
     const ann = annotations.find((x) => x.id === annotEdit.id);
-    if (!ann || ann.kind !== 'arrow') return;
+    if (!ann || (ann.kind !== 'arrow' && ann.kind !== 'sketch')) return;
     try {
       const r = await safeUpdateAnnotation(annotEdit.id, {
         style: { ...ann.style, arrowColor: annotEditArrowColor },
@@ -320,6 +350,26 @@ export default function FieldPage() {
       alert(e instanceof Error ? e.message : 'Eroare la salvare');
     }
   };
+
+  const handleSketchComplete = useCallback(
+    (geom: GeoJSON.LineString) => {
+      void (async () => {
+        try {
+          const r = await safeCreateAnnotation({
+            kind: 'sketch',
+            geom,
+            visibility: annotVisibility,
+            style: { arrowColor: annotSketchColor },
+          });
+          if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
+          void reload();
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'Eroare la desen');
+        }
+      })();
+    },
+    [annotSketchColor, annotVisibility, reload],
+  );
 
   const saveSymbolEdit = async () => {
     if (!annotEdit || annotEdit.kind !== 'symbol') return;
@@ -347,7 +397,7 @@ export default function FieldPage() {
       setSidebarOpen(false);
       return;
     }
-    if (activeTab === 'points' && annotMode !== 'off') {
+    if (activeTab === 'points' && annotMode !== 'off' && annotMode !== 'sketch') {
       void (async () => {
         try {
           if (annotMode === 'arrow') {
@@ -547,7 +597,7 @@ export default function FieldPage() {
                   Alege modul, apoi click pe hartă. (Disponibil doar în tabul Puncte.)
                 </p>
                 <div className="flex gap-2">
-                  {(['off', 'symbol', 'text', 'arrow'] as const).map((m) => (
+                  {(['off', 'symbol', 'text', 'arrow', 'sketch'] as const).map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -562,12 +612,22 @@ export default function FieldPage() {
                           : 'border-slate-700 text-slate-400 hover:bg-slate-800/40'
                       }`}
                     >
-                      {m === 'off' ? 'Off' : m === 'symbol' ? 'Simbol' : m === 'text' ? 'Text' : arrowStart ? 'Săgeată 2/2' : 'Săgeată'}
+                      {m === 'off'
+                        ? 'Off'
+                        : m === 'symbol'
+                          ? 'Simbol'
+                          : m === 'text'
+                            ? 'Text'
+                            : m === 'sketch'
+                              ? 'Creion'
+                              : arrowStart
+                                ? 'Săgeată 2/2'
+                                : 'Săgeată'}
                     </button>
                   ))}
                 </div>
 
-                {annotMode !== 'off' && (
+                {annotMode !== 'off' && annotMode !== 'sketch' && (
                   <>
                     <div className="flex items-center gap-2 text-[11px]">
                       <span className="text-slate-500">Viz:</span>
@@ -652,6 +712,33 @@ export default function FieldPage() {
                   </>
                 )}
 
+                {annotMode === 'sketch' && (
+                  <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                    <p className="text-[10px] leading-snug text-slate-400">
+                      Ține apăsat și trasează pe hartă cu degetul sau mouse-ul. Se salvează la ridicare.
+                    </p>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="text-slate-500">Viz:</span>
+                      <button
+                        type="button"
+                        onClick={() => setAnnotVisibility((v) => (v === 'club' ? 'private' : 'club'))}
+                        className="rounded border border-slate-700 px-2 py-0.5 hover:bg-slate-800/40"
+                      >
+                        {annotVisibility === 'club' ? 'Club' : 'Privat'}
+                      </button>
+                    </div>
+                    <label className="flex items-center gap-2 text-[10px] text-slate-500">
+                      Culoare
+                      <input
+                        type="color"
+                        value={annotSketchColor}
+                        onChange={(e) => setAnnotSketchColor(e.target.value)}
+                        className="h-7 w-10 cursor-pointer rounded border border-slate-600 bg-slate-900"
+                      />
+                    </label>
+                  </div>
+                )}
+
                 {annotEdit && (
                   <div className="space-y-2 border-t border-slate-700 pt-2">
                     {annotEdit.kind === 'text' && (
@@ -701,9 +788,11 @@ export default function FieldPage() {
                         </div>
                       </>
                     )}
-                    {annotEdit.kind === 'arrow' && (
+                    {(annotEdit.kind === 'arrow' || annotEdit.kind === 'sketch') && (
                       <>
-                        <div className="text-xs font-medium text-slate-300">Culoare săgeată</div>
+                        <div className="text-xs font-medium text-slate-300">
+                          {annotEdit.kind === 'sketch' ? 'Culoare creion' : 'Culoare săgeată'}
+                        </div>
                         <input
                           type="color"
                           value={annotEditArrowColor}
@@ -792,13 +881,15 @@ export default function FieldPage() {
                               Editează
                             </button>
                           )}
-                          {a.kind === 'arrow' && (
+                          {(a.kind === 'arrow' || a.kind === 'sketch') && (
                             <button
                               type="button"
                               className="shrink-0 text-brand-400 hover:underline"
                               onClick={() => {
-                                setAnnotEdit({ id: a.id, kind: 'arrow' });
-                                setAnnotEditArrowColor(a.style?.arrowColor ?? '#22c55e');
+                                setAnnotEdit({ id: a.id, kind: a.kind === 'sketch' ? 'sketch' : 'arrow' });
+                                setAnnotEditArrowColor(
+                                  a.style?.arrowColor ?? (a.kind === 'sketch' ? '#f97316' : '#22c55e'),
+                                );
                               }}
                             >
                               Culoare
@@ -1027,7 +1118,10 @@ export default function FieldPage() {
             liveTrack={liveTrack}
             drawZoneMode={false}
             onZoneDrawn={() => {}}
-            annotationPlacementMode={activeTab === 'points' && annotMode !== 'off'}
+            annotationPlacementMode={activeTab === 'points' && annotMode !== 'off' && annotMode !== 'sketch'}
+            sketchMode={activeTab === 'points' && annotMode === 'sketch'}
+            sketchStrokeColor={annotSketchColor}
+            onSketchComplete={handleSketchComplete}
             pointPlacementPickMode={awaitingPointOnMap && activeTab === 'points' && annotMode === 'off'}
             onMapClick={onMapClick}
             onCadLabelTap={handleCadLabelTap}
@@ -1235,6 +1329,7 @@ export default function FieldPage() {
           error={cadLabelErr}
           onClose={closeCadLabelEdit}
           onSave={(text) => void saveCadLabelEdit(text)}
+          onDelete={() => void deleteCadLabelEdit()}
         />
 
       </div>

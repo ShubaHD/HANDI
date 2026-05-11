@@ -78,3 +78,9 @@ export function updateCadPointLabelInCollection(
   });
   return { ...fc, features };
 }
+
+/** Elimină complet un feature (ex. punct TEXT) din colecția stratului CAD. */
+export function removeCadFeatureAtIndex(fc: FeatureCollection, index: number): FeatureCollection {
+  if (index < 0 || index >= fc.features.length) return fc;
+  return { ...fc, features: fc.features.filter((_, i) => i !== index) };
+}

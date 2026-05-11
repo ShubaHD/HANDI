@@ -36,6 +36,13 @@ export type NewAnnotationInput =
       bearing_deg?: number | null;
       visibility: Visibility;
       style?: AnnotationStyle;
+    }
+  | {
+      kind: 'sketch';
+      geom: GeoJSON.LineString;
+      notes?: string | null;
+      visibility: Visibility;
+      style?: AnnotationStyle;
     };
 
 export type AnnotationUpdatePatch = {
@@ -118,17 +125,24 @@ export async function createAnnotation(input: NewAnnotationInput): Promise<Annot
   const style = input.style && Object.keys(input.style).length > 0 ? input.style : {};
 
   const notesTrim = typeof input.notes === 'string' ? input.notes.trim() : '';
+  const bearingDeg =
+    input.kind === 'sketch'
+      ? null
+      : input.kind === 'arrow'
+        ? (input.bearing_deg ?? null)
+        : (input as { bearing_deg?: number | null }).bearing_deg ?? null;
+
   const row: Record<string, unknown> = {
     owner_id: userId,
     kind: input.kind,
     visibility: input.visibility,
-    bearing_deg: input.bearing_deg ?? null,
+    bearing_deg: bearingDeg,
     style,
     notes: notesTrim ? notesTrim : null,
   };
 
-  if (input.kind === 'arrow') {
-    row.geom = `SRID=4326;${lineToWKT(input.geom)}`;
+  if (input.kind === 'arrow' || input.kind === 'sketch') {
+    row.geom = `SRID=4326;${lineToWKT(decimateLineString(input.geom, 800))}`;
     row.lat = null;
     row.lon = null;
     row.symbol = null;
@@ -173,6 +187,23 @@ export async function updateAnnotation(id: string, patch: AnnotationUpdatePatch)
   const { data, error } = await supabase.from('annotations').update(updateRow).eq('id', id).select(SELECT_COLS).single();
   if (error) throw error;
   return rowToAnnotation(data as unknown as AnnotationRow);
+}
+
+function decimateLineString(line: GeoJSON.LineString, maxPts: number): GeoJSON.LineString {
+  const coords = line.coordinates;
+  if (coords.length <= maxPts) return line;
+  const step = Math.ceil(coords.length / maxPts);
+  const out: [number, number][] = [];
+  for (let i = 0; i < coords.length; i += step) {
+    const c = coords[i];
+    if (c && c.length >= 2) out.push([c[0], c[1]]);
+  }
+  const last = coords[coords.length - 1];
+  if (last && last.length >= 2) {
+    const o = out[out.length - 1];
+    if (!o || o[0] !== last[0] || o[1] !== last[1]) out.push([last[0], last[1]]);
+  }
+  return { type: 'LineString', coordinates: out.length >= 2 ? out : coords };
 }
 
 function lineToWKT(line: GeoJSON.LineString): string {

@@ -41,8 +41,9 @@ function symbolLabel(symbol: string): string {
 
 function styleProps(a: Annotation): Record<string, unknown> {
   const s = a.style ?? {};
-  if (a.kind === 'arrow') {
-    return { arrow_color: typeof s.arrowColor === 'string' ? s.arrowColor : '#22c55e' };
+  if (a.kind === 'arrow' || a.kind === 'sketch') {
+    const def = a.kind === 'sketch' ? '#f97316' : '#22c55e';
+    return { arrow_color: typeof s.arrowColor === 'string' ? s.arrowColor : def };
   }
   if (a.kind === 'text') {
     return {
@@ -60,19 +61,22 @@ function annotationsToGeoJSON(
 
   for (const a of annotations) {
     const extra = styleProps(a);
+    const props: Record<string, unknown> = {
+      id: a.id,
+      kind: a.kind,
+      symbol: a.symbol,
+      text: a.text,
+      visibility: a.visibility,
+      symbol_label: a.symbol ? symbolLabel(a.symbol) : '',
+      ...extra,
+    };
+    if (a.kind === 'arrow' && a.bearing_deg != null && Number.isFinite(a.bearing_deg)) {
+      props.bearing_deg = a.bearing_deg;
+    }
     features.push({
       type: 'Feature',
       geometry: a.geom,
-      properties: {
-        id: a.id,
-        kind: a.kind,
-        symbol: a.symbol,
-        text: a.text,
-        visibility: a.visibility,
-        bearing_deg: a.bearing_deg,
-        symbol_label: a.symbol ? symbolLabel(a.symbol) : '',
-        ...extra,
-      },
+      properties: props,
     });
 
     if (a.kind === 'arrow' && a.geom.type === 'LineString') {
@@ -122,7 +126,7 @@ export function addAnnotationsLayer(map: MlMap) {
     id: LAYER_ARROWS,
     type: 'line',
     source: SOURCE_ID,
-    filter: ['==', ['get', 'kind'], 'arrow'] as never,
+    filter: ['any', ['==', ['get', 'kind'], 'arrow'], ['==', ['get', 'kind'], 'sketch']] as never,
     paint: {
       'line-color': ['coalesce', ['get', 'arrow_color'], '#22c55e'] as never,
       'line-width': 3,
@@ -182,6 +186,7 @@ export function addAnnotationsLayer(map: MlMap) {
       ['!=', ['downcase', ANNOT_TEXT_EXPR], 'marker'],
     ] as never,
     layout: {
+      'symbol-placement': 'point',
       'text-field': ['get', 'text'],
       'text-font': ANNOT_TEXT_FONT as never,
       'text-size': [
@@ -192,6 +197,12 @@ export function addAnnotationsLayer(map: MlMap) {
       ] as never,
       'text-offset': [0, 0.9],
       'text-anchor': 'top',
+      /** Rămâne lizibil orizontal pe ecran (nu se rotește odată cu bearing-ul hărții). */
+      'text-rotation-alignment': 'viewport',
+      'text-pitch-alignment': 'viewport',
+      'text-rotate': 0,
+      'text-writing-mode': ['horizontal'] as never,
+      'text-max-width': 22,
       'text-allow-overlap': false,
       'text-optional': true,
     },

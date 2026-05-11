@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import maplibregl, { Map as MlMap, NavigationControl, ScaleControl } from 'maplibre-gl';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
-import { ensurePMTilesProtocol } from '@/lib/pmtiles';
+import { buildBaseMapsFromArchives, ensurePMTilesProtocol } from '@/lib/pmtiles';
 import { buildBaseStyle, getBaseMapById, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
 import { LeafletView } from './LeafletView';
 
@@ -54,6 +54,10 @@ interface Props {
   annotationPlacementMode?: boolean;
   /** Când e activ, click-ul (inclusiv peste puncte/zone) plasează poziția pentru punct nou. */
   pointPlacementPickMode?: boolean;
+  /** Mod creion: traseu liber pe hartă → salvat ca adnotare `sketch`. */
+  sketchMode?: boolean;
+  sketchStrokeColor?: string;
+  onSketchComplete?: (line: GeoJSON.LineString) => void;
   onMapClick?: (lng: number, lat: number) => void;
   onPointClick?: (id: string) => void;
   onZoneClick?: (id: string) => void;
@@ -104,6 +108,9 @@ export function MapView({
   onZoneDrawn,
   annotationPlacementMode = false,
   pointPlacementPickMode = false,
+  sketchMode = false,
+  sketchStrokeColor = '#f97316',
+  onSketchComplete,
   onMapClick,
   onPointClick,
   onZoneClick,
@@ -156,14 +163,63 @@ export function MapView({
     setHover(null);
   };
 
+  /** După încercarea de rehidrat basemap PMTiles din Dexie (evită să rescriem LS cu „default” înainte de rehidrate). */
+  const basemapLsHydrateDoneRef = useRef(false);
+
   // Persist basemap selection for both Leaflet and MapLibre modes
   useEffect(() => {
     try {
+      if (!basemapLsHydrateDoneRef.current) {
+        const prev = localStorage.getItem(BASEMAP_KEY);
+        if (
+          prev?.startsWith('pmtiles-') &&
+          !base.id.startsWith('pmtiles-') &&
+          getBaseMapById(base.id)
+        ) {
+          return;
+        }
+      }
       localStorage.setItem(BASEMAP_KEY, base.id);
     } catch {
       /* ignore */
     }
   }, [base.id]);
+
+  /** ID-urile `pmtiles-*` nu sunt în BASE_MAPS; reîncarcă basemap-ul salvat din Dexie după refresh. */
+  useEffect(() => {
+    void (async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        if (new URLSearchParams(window.location.search).has('debugMap')) return;
+        const saved = localStorage.getItem(BASEMAP_KEY);
+        if (!saved?.startsWith('pmtiles-')) return;
+        if (getBaseMapById(saved)) return;
+        const offline = await buildBaseMapsFromArchives();
+        const found = offline.find((b) => b.id === saved);
+        if (found) {
+          setBase(found);
+        } else {
+          try {
+            localStorage.setItem(BASEMAP_KEY, getDefaultBaseMap().id);
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        basemapLsHydrateDoneRef.current = true;
+      }
+    })();
+  }, []);
+
+  const cadLayersRef = useRef(cadLayers);
+  cadLayersRef.current = cadLayers;
+
+  const sketchModeRef = useRef(sketchMode);
+  sketchModeRef.current = sketchMode;
+  const onSketchCompleteRef = useRef(onSketchComplete);
+  onSketchCompleteRef.current = onSketchComplete;
 
   const handlersRef = useRef({
     onMapClick,
@@ -399,6 +455,7 @@ export function MapView({
 
     map.on('click', (e) => {
       if (drawRef.current?.enabled) return;
+      if (sketchModeRef.current) return;
       if (handlersRef.current.pointPlacementPickMode) {
         handlersRef.current.onMapClick?.(e.lngLat.lng, e.lngLat.lat);
         return;
@@ -432,6 +489,10 @@ export function MapView({
             f.geometry &&
             f.geometry.type === 'Point'
           ) {
+            const row = cadLayersRef.current.find((r) => r.id === rowId);
+            if (row && (row.style as { cadLabelLocked?: boolean }).cadLabelLocked === true) {
+              return;
+            }
             const [lon, lat] = f.geometry.coordinates;
             const fid =
               typeof props[CAD_FEATURE_ID_KEY] === 'string'
@@ -660,6 +721,112 @@ export function MapView({
   }, [cadLayers]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !sketchMode) return;
+    const canvas = map.getCanvas();
+    let path: [number, number][] = [];
+    let drawing = false;
+
+    const toLngLat = (clientX: number, clientY: number) => {
+      const rect = canvas.getBoundingClientRect();
+      return map.unproject([clientX - rect.left, clientY - rect.top]);
+    };
+
+    const minDistSq = 2e-11;
+
+    const push = (lng: number, lat: number) => {
+      const last = path[path.length - 1];
+      if (last) {
+        const dx = lng - last[0];
+        const dy = lat - last[1];
+        if (dx * dx + dy * dy < minDistSq) return;
+      }
+      path.push([lng, lat]);
+    };
+
+    const finish = () => {
+      if (!drawing) return;
+      drawing = false;
+      try {
+        map.dragPan.enable();
+        map.doubleClickZoom.enable();
+        map.touchZoomRotate.enable();
+      } catch {
+        /* ignore */
+      }
+      if (path.length >= 2) {
+        onSketchCompleteRef.current?.({ type: 'LineString', coordinates: [...path] });
+      }
+      path = [];
+    };
+
+    const down = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      drawing = true;
+      path = [];
+      const ll = toLngLat(e.clientX, e.clientY);
+      path.push([ll.lng, ll.lat]);
+      try {
+        map.dragPan.disable();
+        map.doubleClickZoom.disable();
+        map.touchZoomRotate.disable();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const move = (e: MouseEvent) => {
+      if (!drawing) return;
+      e.preventDefault();
+      const ll = toLngLat(e.clientX, e.clientY);
+      push(ll.lng, ll.lat);
+    };
+
+    const up = () => finish();
+
+    const touchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      down(new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true }));
+    };
+    const touchMove = (e: TouchEvent) => {
+      if (!drawing || e.touches.length !== 1) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      move(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY, bubbles: true }));
+    };
+    const touchEnd = () => finish();
+
+    canvas.addEventListener('mousedown', down, { capture: true });
+    window.addEventListener('mousemove', move, { capture: true });
+    window.addEventListener('mouseup', up, { capture: true });
+    canvas.addEventListener('touchstart', touchStart, { capture: true, passive: false });
+    window.addEventListener('touchmove', touchMove, { capture: true, passive: false });
+    window.addEventListener('touchend', touchEnd, { capture: true });
+    window.addEventListener('touchcancel', touchEnd, { capture: true });
+
+    return () => {
+      canvas.removeEventListener('mousedown', down, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('mousemove', move, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('mouseup', up, { capture: true } as AddEventListenerOptions);
+      canvas.removeEventListener('touchstart', touchStart, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('touchmove', touchMove, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('touchend', touchEnd, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener('touchcancel', touchEnd, { capture: true } as AddEventListenerOptions);
+      try {
+        map.dragPan.enable();
+        map.doubleClickZoom.enable();
+        map.touchZoomRotate.enable();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [sketchMode]);
+
+  useEffect(() => {
     if (!flyTo) return;
     const map = mapRef.current;
     if (!map) return;
@@ -759,19 +926,19 @@ export function MapView({
     );
   };
 
-  // Default renderer: Leaflet (most compatible).
-  // Use MapLibre explicitly via ?maplibre=1 (needed for PMTiles raster overlays).
-  // Force Leaflet via ?leaflet=1.
+  // Default renderer: Leaflet (most compatible). PMTiles basemap (offline) needs MapLibre + protocol `pmtiles://`.
+  // Use MapLibre explicitly via ?maplibre=1 (raster overlays / parity). Force Leaflet via ?leaflet=1 (ignored for PMTiles).
   const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const forceLeaflet = Boolean(qs?.has('leaflet'));
   const forceMaplibre = Boolean(qs?.has('maplibre'));
-  const useLeaflet = forceLeaflet || !forceMaplibre;
+  const basemapNeedsMapLibre = Boolean(base.pmtiles && base.pmtilesUrl);
+  const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
 
   if (useLeaflet) {
     return (
       <div className="relative h-full w-full min-h-0">
         <div
-          className={`absolute inset-0 z-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}${pointPlacementPickMode ? ' cursor-crosshair' : ''}`}
+          className={`absolute inset-0 z-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}${pointPlacementPickMode || sketchMode ? ' cursor-crosshair' : ''}`}
         >
           <LeafletView
             base={base}
@@ -781,6 +948,9 @@ export function MapView({
             annotations={annotations}
             cadLayers={cadLayers}
             annotationPlacementMode={annotationPlacementMode}
+            sketchMode={sketchMode}
+            sketchStrokeColor={sketchStrokeColor}
+            onSketchComplete={onSketchComplete}
             pointPlacementPickMode={pointPlacementPickMode}
             onMapClick={onMapClick}
             onCadLabelTap={onCadLabelTap}
@@ -838,7 +1008,7 @@ export function MapView({
     <div className="relative h-full w-full min-h-0">
       <div
         ref={containerRef}
-        className={`absolute inset-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}${pointPlacementPickMode ? ' cursor-crosshair' : ''}`}
+        className={`absolute inset-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}${pointPlacementPickMode || sketchMode ? ' cursor-crosshair' : ''}`}
       />
       {betweenMapAndControls}
       {hover && <MapHoverTooltip x={hover.x} y={hover.y} data={hover.data} />}

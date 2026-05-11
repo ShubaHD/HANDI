@@ -1,6 +1,7 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { CadLayerRow } from '@/features/cad/api';
 import { sanitizeCadLabelsFeatureCollection } from '@/features/cad/cadMapLabels';
+import { isCadLabelKind, usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
 import type { FeatureCollection } from 'geojson';
 
 const PREFIX_SRC = 'cadsrc-';
@@ -19,6 +20,18 @@ function styleDefaults(row: CadLayerRow): { color: string; width: number; opacit
     width: typeof s.width === 'number' ? s.width : 2,
     opacity: typeof s.opacity === 'number' ? s.opacity : 0.85,
   };
+}
+
+function cadLabelZoomBounds(row: CadLayerRow): { minzoom?: number; maxzoom?: number } {
+  const s = row.style as { cadLabelMinZoom?: unknown; cadLabelMaxZoom?: unknown };
+  const min =
+    typeof s.cadLabelMinZoom === 'number' && Number.isFinite(s.cadLabelMinZoom) ? s.cadLabelMinZoom : undefined;
+  const max =
+    typeof s.cadLabelMaxZoom === 'number' && Number.isFinite(s.cadLabelMaxZoom) ? s.cadLabelMaxZoom : undefined;
+  const out: { minzoom?: number; maxzoom?: number } = {};
+  if (min != null) out.minzoom = min;
+  if (max != null) out.maxzoom = max;
+  return out;
 }
 
 function removeAllCadLayers(map: MlMap) {
@@ -48,17 +61,21 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
     const st = styleDefaults(row);
 
     // Same DXF layer often mixes cave polylines + TEXT (e.g. layer "CAVE" → kind `caves`); sanitize keeps lines + label points.
-    const useSanitizedLabelPoints = row.kind === 'labels' || row.kind === 'caves';
+    const useSanitizedLabelPoints = usesCadLabelRendering(row.kind);
     const dataFc = useSanitizedLabelPoints ? sanitizeCadLabelsFeatureCollection(fc) : fc;
-    if (row.kind === 'labels' && (!dataFc.features || dataFc.features.length === 0)) continue;
+    if (isCadLabelKind(row.kind) && (!dataFc.features || dataFc.features.length === 0)) continue;
 
     map.addSource(srcId, { type: 'geojson', data: dataFc });
+
+    const labelZoom = cadLabelZoomBounds(row);
 
     const addCadTextSymbolLayer = () => {
       map.addLayer({
         id: `${PREFIX_LAYER}${row.id}-sym`,
         type: 'symbol',
         source: srcId,
+        ...(labelZoom.minzoom != null ? { minzoom: labelZoom.minzoom } : {}),
+        ...(labelZoom.maxzoom != null ? { maxzoom: labelZoom.maxzoom } : {}),
         filter: [
           'all',
           ['==', ['geometry-type'], 'Point'],
@@ -84,7 +101,7 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
       });
     };
 
-    if (row.kind === 'labels') {
+    if (isCadLabelKind(row.kind)) {
       addCadTextSymbolLayer();
       continue;
     }

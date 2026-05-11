@@ -8,8 +8,12 @@ import {
   type CadImport,
   type CadLayerRow,
 } from './api';
-import { classifyCadImport } from './classifyCadLayer';
-import type { ClassifiedCadLayer } from './classifyCadLayer';
+import {
+  classifyCadImport,
+  isCadLabelKind,
+  mergeCadStyleForNewKind,
+  type ClassifiedCadLayer,
+} from './classifyCadLayer';
 import { parseDxfStereo70Full, type DxfParseDiagnostics, type Stereo70SourceCrs } from './dxfImport';
 import { ImportWizard } from './ImportWizard';
 import { createPointsBulk } from '@/features/points/api';
@@ -21,6 +25,9 @@ const CAD_KIND_LABEL: Record<CadLayerRow['kind'], string> = {
   dolines: 'Doline',
   contours: 'Contur',
   labels: 'Nume / etichete',
+  labels_caves: 'Nume peșteri',
+  labels_ridges: 'Nume dealuri / culmi',
+  labels_places: 'Nume localități',
   springs: 'Izvor',
   avens: 'Aven',
   other: 'Altele',
@@ -30,7 +37,10 @@ const CAD_KIND_OPTIONS: Array<{ value: CadLayerRow['kind']; label: string }> = [
   { value: 'caves', label: 'Peșteri (linii)' },
   { value: 'dolines', label: 'Doline (poligon/linie)' },
   { value: 'contours', label: 'Curbe nivel' },
-  { value: 'labels', label: 'Etichete / nume' },
+  { value: 'labels', label: 'Etichete / nume (generic)' },
+  { value: 'labels_caves', label: 'Etichete: peșteri' },
+  { value: 'labels_ridges', label: 'Etichete: dealuri / culmi' },
+  { value: 'labels_places', label: 'Etichete: localități' },
   { value: 'springs', label: 'Izvor' },
   { value: 'avens', label: 'Aven' },
   { value: 'other', label: 'Altele' },
@@ -463,9 +473,16 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                         className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
                                         value={row.kind}
                                         disabled={editingBusy}
-                                        onChange={(e) =>
-                                          void saveLayerStyle(row, { kind: e.target.value as CadLayerRow['kind'] })
-                                        }
+                                        onChange={(e) => {
+                                          const newKind = e.target.value as CadLayerRow['kind'];
+                                          void saveLayerStyle(row, {
+                                            kind: newKind,
+                                            style: mergeCadStyleForNewKind(
+                                              (row.style ?? {}) as Record<string, unknown>,
+                                              newKind,
+                                            ),
+                                          });
+                                        }}
                                       >
                                         {CAD_KIND_OPTIONS.map((k) => (
                                           <option key={k.value} value={k.value}>
@@ -523,6 +540,81 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                       />
                                     </label>
                                   </div>
+
+                                  {isCadLabelKind(row.kind) && (
+                                    <div className="space-y-2 pt-1 border-t border-slate-800/80">
+                                      <label className="flex items-center gap-2 text-[11px] text-slate-300">
+                                        <input
+                                          type="checkbox"
+                                          className="w-3.5 h-3.5 accent-brand-500 shrink-0"
+                                          checked={Boolean((row.style as { cadLabelLocked?: boolean }).cadLabelLocked)}
+                                          disabled={editingBusy}
+                                          onChange={(e) =>
+                                            void saveLayerStyle(row, {
+                                              style: { ...(row.style ?? {}), cadLabelLocked: e.target.checked },
+                                            })
+                                          }
+                                        />
+                                        Blocat: nu se editează din hartă (tap)
+                                      </label>
+                                      <label className="block text-[11px] text-slate-400">
+                                        Arată etichete doar de la zoom ≥ (opțional)
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={24}
+                                          step={1}
+                                          className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
+                                          placeholder="lipsă = orice zoom"
+                                          value={
+                                            typeof (row.style as { cadLabelMinZoom?: number }).cadLabelMinZoom ===
+                                            'number'
+                                              ? (row.style as { cadLabelMinZoom: number }).cadLabelMinZoom
+                                              : ''
+                                          }
+                                          disabled={editingBusy}
+                                          onChange={(e) => {
+                                            const raw = e.target.value.trim();
+                                            const next = { ...(row.style ?? {}) } as Record<string, unknown>;
+                                            if (raw === '') delete next.cadLabelMinZoom;
+                                            else {
+                                              const n = parseInt(raw, 10);
+                                              if (Number.isFinite(n)) next.cadLabelMinZoom = n;
+                                            }
+                                            void saveLayerStyle(row, { style: next });
+                                          }}
+                                        />
+                                      </label>
+                                      <label className="block text-[11px] text-slate-400">
+                                        Ascunde etichete la zoom ≥ (ex. 17 = dispar când ești foarte aproape)
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={24}
+                                          step={1}
+                                          className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
+                                          placeholder="lipsă = mereu vizibile"
+                                          value={
+                                            typeof (row.style as { cadLabelMaxZoom?: number }).cadLabelMaxZoom ===
+                                            'number'
+                                              ? (row.style as { cadLabelMaxZoom: number }).cadLabelMaxZoom
+                                              : ''
+                                          }
+                                          disabled={editingBusy}
+                                          onChange={(e) => {
+                                            const raw = e.target.value.trim();
+                                            const next = { ...(row.style ?? {}) } as Record<string, unknown>;
+                                            if (raw === '') delete next.cadLabelMaxZoom;
+                                            else {
+                                              const n = parseInt(raw, 10);
+                                              if (Number.isFinite(n)) next.cadLabelMaxZoom = n;
+                                            }
+                                            void saveLayerStyle(row, { style: next });
+                                          }}
+                                        />
+                                      </label>
+                                    </div>
+                                  )}
 
                                   {editingError && (
                                     <div className="text-[11px] text-red-300 bg-red-950/30 border border-red-900/60 rounded p-2">

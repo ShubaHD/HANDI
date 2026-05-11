@@ -50,6 +50,7 @@ export function asText(v: unknown): string {
 }
 
 export function titleFromProps(props: Record<string, unknown>): string {
+  if (props.kind === 'sketch') return 'Creion';
   return (
     asText(props.name) ||
     asText(props.title) ||

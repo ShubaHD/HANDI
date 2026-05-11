@@ -8,14 +8,35 @@ export type CadLayerKind =
   | 'dolines'
   | 'contours'
   | 'labels'
+  | 'labels_caves'
+  | 'labels_ridges'
+  | 'labels_places'
   | 'springs'
   | 'avens'
   | 'other';
+
+/** Layer kinds that render DXF TEXT/MTEXT puncte ca etichete pe hartă (fără `caves`, care include și linii). */
+export const CAD_LABEL_KINDS: CadLayerKind[] = ['labels', 'labels_caves', 'labels_ridges', 'labels_places'];
+
+export function isCadLabelKind(kind: string): boolean {
+  return (CAD_LABEL_KINDS as readonly string[]).includes(kind);
+}
+
+/** Etichete punct + strat `caves` (linii + eventual puncte cu nume). */
+export function usesCadLabelRendering(kind: string): boolean {
+  return isCadLabelKind(kind) || kind === 'caves';
+}
 
 const RULES: { kind: CadLayerKind; pattern: RegExp }[] = [
   { kind: 'caves', pattern: /^(PESTERI?|CAVE|CAV|PEST|INTRARE)/i },
   { kind: 'dolines', pattern: /^(DOLINE?|DOLINA|SINKHOLE)/i },
   { kind: 'contours', pattern: /^(CONTUR|CONTOUR|CURBE|NIVEL|ELEVATION|CN?)/i },
+  { kind: 'labels_ridges', pattern: /^(DEALI|DEAL|COCOR|CULME|RIDGE|CRESTA)/i },
+  {
+    kind: 'labels_caves',
+    pattern: /^(NUME[_-]?PESTER|PESTERI[_-]?NUME|PESTERA[_-]?NUME|ETICH.*PEST|CAVE.*NAM)/i,
+  },
+  { kind: 'labels_places', pattern: /^(LOCALIT|SAT|COMUNA|ORAS|VILLAGE|TOWN|NUME[_-]?SAT)/i },
   // Include common Romanian cave-number layers (e.g. nr_pestera) so TEXT/MTEXT points render as map labels.
   { kind: 'labels', pattern: /^(NUME|NAME|LABEL|ETICHETA|TEXT|nr_pestera|nr[_-]?pest|numar)/i },
   { kind: 'springs', pattern: /^(IZVOR|SPRING|SOURCE)/i },
@@ -39,6 +60,9 @@ export function defaultStyleForKind(kind: CadLayerKind): { color: string; width:
     case 'contours':
       return { color: '#64748b', width: 1, opacity: 0.65 };
     case 'labels':
+    case 'labels_caves':
+    case 'labels_ridges':
+    case 'labels_places':
       return { color: '#0f172a', width: 1, opacity: 1 };
     case 'springs':
       return { color: '#06b6d4', width: 4, opacity: 0.9 };
@@ -71,7 +95,7 @@ export function classifyCadImport(layers: CadLayerGroup[]): ClassifiedCadLayer[]
     .flatMap((l) => l.features)
     .filter((f) => f.geometry?.type === 'LineString');
 
-  const labelLayers = classified.filter((l) => l.kind === 'labels');
+  const labelLayers = classified.filter((l) => l.kind === 'labels' || l.kind === 'labels_caves');
   for (const ll of labelLayers) {
     ll.features = ll.features.map((f) => {
       if (f.geometry?.type !== 'Point') return f;
@@ -106,6 +130,22 @@ export function classifyCadImport(layers: CadLayerGroup[]): ClassifiedCadLayer[]
   }
 
   return classified;
+}
+
+/** Câmpuri opționale în `cad_layers.style` pentru comportamentul etichetelor pe hartă. */
+export function defaultLabelBehaviorForKind(kind: CadLayerKind): Record<string, unknown> {
+  if (kind === 'labels_ridges') return { cadLabelLocked: true };
+  // La zoom mare (ex. ≥17) etichetele dispar — util pentru nume de peșteri la plan de detaliu.
+  if (kind === 'labels_caves') return { cadLabelMaxZoom: 17 };
+  return {};
+}
+
+export function mergeCadStyleForNewKind(style: Record<string, unknown>, kind: CadLayerKind): Record<string, unknown> {
+  const next = { ...style };
+  for (const [k, v] of Object.entries(defaultLabelBehaviorForKind(kind))) {
+    if (next[k] === undefined) next[k] = v;
+  }
+  return next;
 }
 
 export function toFeatureCollection(features: Feature[]): FeatureCollection {
