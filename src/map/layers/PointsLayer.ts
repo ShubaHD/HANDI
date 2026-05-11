@@ -5,6 +5,9 @@ const SOURCE_ID = 'poi-source';
 const LAYER_CIRCLES = 'poi-circles';
 const LAYER_LABELS = 'poi-labels';
 
+const POI_NAME_EXPR: unknown[] = ['coalesce', ['get', 'name'], ''];
+const POI_LABEL_TEXT_FONT = ['Open Sans Regular'];
+
 function pointsToGeoJSON(points: PointOfInterest[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
     type: 'FeatureCollection',
@@ -54,8 +57,15 @@ export function addPointsLayer(map: MlMap) {
     type: 'symbol',
     source: SOURCE_ID,
     minzoom: 12,
+    filter: [
+      'all',
+      ['!=', POI_NAME_EXPR, ''],
+      ['!=', ['downcase', POI_NAME_EXPR], 'mark'],
+      ['!=', ['downcase', POI_NAME_EXPR], 'marker'],
+    ] as never,
     layout: {
       'text-field': ['get', 'name'],
+      'text-font': POI_LABEL_TEXT_FONT as never,
       'text-size': 11,
       'text-offset': [0, 1.2],
       'text-anchor': 'top',

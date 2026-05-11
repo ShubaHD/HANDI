@@ -76,6 +76,7 @@ export function classifyCadImport(layers: CadLayerGroup[]): ClassifiedCadLayer[]
     ll.features = ll.features.map((f) => {
       if (f.geometry?.type !== 'Point') return f;
       const text =
+        (f.properties?.cad_label as string | undefined) ??
         (f.properties?.dxfText as string | undefined) ??
         (f.properties?.text as string | undefined) ??
         '';

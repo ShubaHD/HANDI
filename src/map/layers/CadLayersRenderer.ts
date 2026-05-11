@@ -1,12 +1,16 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { CadLayerRow } from '@/features/cad/api';
+import { sanitizeCadLabelsFeatureCollection } from '@/features/cad/cadMapLabels';
 import type { FeatureCollection } from 'geojson';
 
 const PREFIX_SRC = 'cadsrc-';
 const PREFIX_LAYER = 'cadlay-';
 
 /** MapLibre expression: resolved label string from GeoJSON properties (new + legacy imports). */
-const cadLabelExpr: unknown[] = ['coalesce', ['get', 'dxfText'], ['get', 'text'], ''];
+const cadLabelExpr: unknown[] = ['coalesce', ['get', 'cad_label'], ['get', 'dxfText'], ['get', 'text'], ''];
+
+/** Glyphs on demotiles host (same as app basemap `glyphs` URL). */
+const CAD_LABEL_TEXT_FONT = ['Open Sans Regular'];
 
 function styleDefaults(row: CadLayerRow): { color: string; width: number; opacity: number } {
   const s = row.style as { color?: string; width?: number; opacity?: number };
@@ -43,7 +47,10 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
     const srcId = `${PREFIX_SRC}${row.id}`;
     const st = styleDefaults(row);
 
-    map.addSource(srcId, { type: 'geojson', data: fc });
+    const dataFc = row.kind === 'labels' ? sanitizeCadLabelsFeatureCollection(fc) : fc;
+    if (row.kind === 'labels' && (!dataFc.features || dataFc.features.length === 0)) continue;
+
+    map.addSource(srcId, { type: 'geojson', data: dataFc });
 
     if (row.kind === 'labels') {
       map.addLayer({
@@ -54,11 +61,12 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
           'all',
           ['==', ['geometry-type'], 'Point'],
           ['!=', cadLabelExpr, ''],
-          // Civil 3D marker placeholders (any casing / odd Unicode spaces).
           ['!=', ['downcase', cadLabelExpr], 'mark'],
+          ['!=', ['downcase', cadLabelExpr], 'marker'],
         ] as never,
         layout: {
           'text-field': cadLabelExpr as never,
+          'text-font': CAD_LABEL_TEXT_FONT as never,
           'text-size': 13,
           'text-offset': [0, 0.6],
           'text-anchor': 'top',

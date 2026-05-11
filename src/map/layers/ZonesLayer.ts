@@ -87,8 +87,15 @@ export function addZonesLayer(map: MlMap) {
     type: 'symbol',
     source: SOURCE_ID,
     minzoom: 11,
+    filter: [
+      'all',
+      ['!=', ['coalesce', ['get', 'name'], ''], ''],
+      ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'mark'],
+      ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'marker'],
+    ] as never,
     layout: {
       'text-field': ['get', 'name'],
+      'text-font': ['Open Sans Regular'] as never,
       'text-size': 12,
       'symbol-placement': 'point',
     },

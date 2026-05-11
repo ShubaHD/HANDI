@@ -2,6 +2,7 @@ import proj4 from 'proj4';
 import DxfParser from 'dxf-parser';
 import { lineString, simplify } from '@turf/turf';
 import type { Feature, FeatureCollection, Point, Polygon } from 'geojson';
+import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from './cadMapLabels';
 
 proj4.defs(
   'EPSG:3844',
@@ -515,16 +516,15 @@ export function parseDxfStereo70Full(
     if (type === 'TEXT' || type === 'MTEXT') {
       const pos = entityPosition(e);
       const raw = String((e.text as string | undefined) ?? '');
-      const text = type === 'MTEXT' ? decodeMText(raw) : decodeDxfText(raw);
-      if (!pos || !text) return;
-      // Civil 3D / marker blocks often emit placeholder TEXT "Mark" — skip as a label.
-      if (/^mark$/i.test(text.replace(/\u200c|\u200d|\ufeff/g, '').trim())) return;
+      const decoded = type === 'MTEXT' ? decodeMText(raw) : decodeDxfText(raw);
+      const cad_label = normalizeCadMapLabelString(decoded);
+      if (!pos || !cad_label) return;
+      if (isJunkCadPlaceholderLabel(cad_label)) return;
       const [lon, lat] = toLL(pos);
       push(ln, {
         type: 'Feature',
-        // `dxfText`: primary key for map labels (avoids rare `text` key issues in JSON pipelines).
-        // `text` kept for older imports already stored in Supabase.
-        properties: { entity: type, dxfText: text, text },
+        // Single canonical property for map text (avoid `text` — reserved / fragile in some stacks).
+        properties: { entity: type, cad_label },
         geometry: { type: 'Point', coordinates: [lon, lat] } as Point,
       });
       return;

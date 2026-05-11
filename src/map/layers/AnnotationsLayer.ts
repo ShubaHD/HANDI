@@ -7,6 +7,9 @@ const LAYER_TEXT = 'annotations-text';
 const LAYER_ARROWS = 'annotations-arrows';
 const LAYER_ARROW_HEADS = 'annotations-arrow-heads';
 
+const ANNOT_TEXT_FONT = ['Open Sans Regular'];
+const ANNOT_TEXT_EXPR: unknown[] = ['coalesce', ['get', 'text'], ''];
+
 function symbolLabel(symbol: string): string {
   switch (symbol) {
     case 'diaclaza':
@@ -153,9 +156,16 @@ export function addAnnotationsLayer(map: MlMap) {
     type: 'symbol',
     source: SOURCE_ID,
     minzoom: 11,
-    filter: ['==', ['get', 'kind'], 'text'] as never,
+    filter: [
+      'all',
+      ['==', ['get', 'kind'], 'text'],
+      ['!=', ANNOT_TEXT_EXPR, ''],
+      ['!=', ['downcase', ANNOT_TEXT_EXPR], 'mark'],
+      ['!=', ['downcase', ANNOT_TEXT_EXPR], 'marker'],
+    ] as never,
     layout: {
       'text-field': ['get', 'text'],
+      'text-font': ANNOT_TEXT_FONT as never,
       'text-size': 12,
       'text-offset': [0, 0.9],
       'text-anchor': 'top',
