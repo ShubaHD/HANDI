@@ -698,7 +698,7 @@ export default function FieldPage() {
           )}
         </aside>
 
-        <main className="flex-1 relative h-full min-h-0">
+        <main className="relative z-0 flex-1 min-h-0 min-w-0 h-full">
           <MapView
             points={points}
             zones={zones}
@@ -752,7 +752,7 @@ export default function FieldPage() {
             }
           />
 
-          <div className="absolute bottom-6 left-3 z-40 pointer-events-auto">
+          <div className="pointer-events-auto fixed bottom-[max(1.5rem,env(safe-area-inset-bottom,0px))] left-3 z-[500] md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
             <button
               onClick={() => {
                 setAnnotOpen((v) => {
@@ -1072,7 +1072,7 @@ export default function FieldPage() {
           {/* FAB explicit GPS: nu echivalează cu click pe hartă (evită deschiderea accidentală la explorare). */}
           <button
             onClick={addAtCurrentLocation}
-            className="absolute bottom-6 right-3 z-40 bg-brand-600 hover:bg-brand-700 rounded-full w-14 h-14 shadow-xl text-2xl font-bold flex items-center justify-center"
+            className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom,0px))] right-3 z-[500] flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-2xl font-bold shadow-xl hover:bg-brand-700"
             title="Adauga punct la pozitia mea (GPS)"
           >
             +

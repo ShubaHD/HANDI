@@ -783,7 +783,7 @@ export function MapView({
 
         {betweenMapAndControls}
 
-        <div className="absolute top-3 left-3 z-50 flex flex-col gap-2 pointer-events-auto">
+        <div className="pointer-events-auto fixed left-3 top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[500] flex flex-col gap-2 md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
           <button
             onClick={() => setShowSwitcher((v) => !v)}
             className="bg-slate-950/95 backdrop-blur border border-slate-600 rounded-xl shadow-2xl px-3 py-2 text-sm font-semibold hover:bg-slate-800"
@@ -815,7 +815,7 @@ export function MapView({
         <button
           onClick={locateMe}
           disabled={locating}
-          className="absolute bottom-24 right-3 z-50 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center text-xs font-bold pointer-events-auto"
+          className="pointer-events-auto fixed bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] right-3 z-[500] flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900/95 text-xs font-bold shadow-xl backdrop-blur hover:bg-slate-800 disabled:opacity-50 md:bottom-24"
           title="Pozitia mea"
         >
           {locating ? '...' : 'GPS'}
@@ -851,7 +851,7 @@ export function MapView({
         </div>
       )}
 
-      <div className="absolute top-3 left-3 z-50 flex flex-col gap-2 pointer-events-auto">
+      <div className="pointer-events-auto fixed left-3 top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[500] flex flex-col gap-2 md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
         <button
           onClick={() => setShowSwitcher((v) => !v)}
           className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-xl shadow-xl px-3 py-2 text-sm font-medium hover:bg-slate-800"
@@ -881,7 +881,7 @@ export function MapView({
       </div>
 
       {drawZoneMode && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-brand-600 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-xl">
+        <div className="absolute top-3 left-1/2 z-50 -translate-x-1/2 bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-xl">
           Apasa pe harta ca sa adaugi varfuri. Dublu-click pentru finalizare.
         </div>
       )}
@@ -889,13 +889,13 @@ export function MapView({
       <button
         onClick={locateMe}
         disabled={locating}
-        className="absolute bottom-24 right-3 z-50 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center text-xs font-bold pointer-events-auto"
+        className="pointer-events-auto fixed bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] right-3 z-[500] flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900/95 text-xs font-bold shadow-xl backdrop-blur hover:bg-slate-800 disabled:opacity-50 md:bottom-24"
         title="Pozitia mea"
       >
         {locating ? '...' : 'GPS'}
       </button>
 
-      <div className="absolute bottom-40 right-3 z-50 flex flex-col gap-2 pointer-events-auto">
+      <div className="pointer-events-auto fixed bottom-[calc(10rem+env(safe-area-inset-bottom,0px))] right-3 z-[500] flex flex-col gap-2 md:bottom-40">
         <button
           onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
           className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 flex items-center justify-center text-lg font-bold"
