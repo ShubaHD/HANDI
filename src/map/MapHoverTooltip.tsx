@@ -53,6 +53,8 @@ export function titleFromProps(props: Record<string, unknown>): string {
   return (
     asText(props.name) ||
     asText(props.title) ||
+    asText(props.cad_label) ||
+    asText(props.dxfText) ||
     asText(props.text) ||
     asText(props.block) ||
     asText(props.symbol) ||

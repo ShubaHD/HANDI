@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
+import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from '@/features/cad/cadMapLabels';
 
 interface ViewportState {
   lng: number;
@@ -95,6 +99,28 @@ function styleCad(row: CadLayerRow): L.PathOptions {
   };
 }
 
+/** Vite bundles URLs; Leaflet's default marker PNGs must be wired or GeoJSON Points show broken <img>. */
+function fixLeafletDefaultIcons() {
+  const proto = L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown };
+  delete proto._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconUrl: markerIcon,
+    iconRetinaUrl: markerIcon2x,
+    shadowUrl: markerShadow,
+  });
+}
+
+function cadFeatureLabelText(props: Record<string, unknown> | null): string {
+  if (!props) return '';
+  const raw =
+    (typeof props.cad_label === 'string' ? props.cad_label : '') ||
+    (typeof props.dxfText === 'string' ? props.dxfText : '') ||
+    (typeof props.text === 'string' ? props.text : '') ||
+    (typeof props.block === 'string' ? props.block : '') ||
+    (typeof (props as { name?: unknown }).name === 'string' ? String((props as { name?: unknown }).name) : '');
+  return normalizeCadMapLabelString(raw);
+}
+
 export function LeafletView({
   base,
   points,
@@ -151,6 +177,8 @@ export function LeafletView({
   useEffect(() => {
     if (!divRef.current) return;
     if (mapRef.current) return;
+
+    fixLeafletDefaultIcons();
 
     const map = L.map(divRef.current, {
       zoomControl: false,
@@ -399,23 +427,58 @@ export function LeafletView({
     const group = L.layerGroup();
     for (const row of cadLayers) {
       if (!row.visible) continue;
+      const st = styleCad(row);
       const layer = L.geoJSON(row.features as GeoJSON.GeoJsonObject, {
-        style: () => styleCad(row),
+        style: () => st,
+        pointToLayer: (feat, latlng) => {
+          if (feat.geometry?.type !== 'Point') {
+            return L.marker(latlng);
+          }
+          const props = (feat.properties as Record<string, unknown> | null) ?? {};
+          const label = cadFeatureLabelText(props);
+
+          if (row.kind === 'labels' && label && !isJunkCadPlaceholderLabel(label)) {
+            const m = L.circleMarker(latlng, {
+              radius: 4,
+              color: st.color,
+              weight: 1,
+              opacity: st.opacity ?? 1,
+              fillColor: st.color,
+              fillOpacity: Math.min(0.9, (st.opacity ?? 0.85) * 0.85),
+            });
+            m.bindTooltip(escapeHtml(label), {
+              permanent: true,
+              direction: 'top',
+              offset: [0, -6],
+              opacity: 0.95,
+              className: 'handi-cad-leaflet-label',
+            });
+            return m;
+          }
+
+          if (row.kind === 'springs' || row.kind === 'avens') {
+            return L.circleMarker(latlng, {
+              radius: 5,
+              color: st.color,
+              weight: 1,
+              opacity: st.opacity ?? 1,
+              fillColor: st.color,
+              fillOpacity: Math.min(0.95, (st.opacity ?? 0.85) * 0.9),
+            });
+          }
+
+          // POINT entities on non-label layers, or empty label rows: no default pin.
+          return L.circleMarker(latlng, {
+            radius: row.kind === 'labels' ? 0 : 3,
+            opacity: 0,
+            fillOpacity: 0,
+            weight: 0,
+          });
+        },
         onEachFeature: (f, lyr) => {
           const props = (f.properties as Record<string, unknown> | null) ?? {};
-          const text =
-            typeof props.cad_label === 'string'
-              ? props.cad_label
-              : typeof props.dxfText === 'string'
-                ? props.dxfText
-                : typeof props.text === 'string'
-                  ? props.text
-                  : typeof props.block === 'string'
-                    ? props.block
-                    : typeof (props as { name?: unknown }).name === 'string'
-                      ? String((props as { name?: unknown }).name)
-                      : '';
-          const title = text || row.cad_layer;
+          const label = cadFeatureLabelText(props);
+          const title = (label && !isJunkCadPlaceholderLabel(label) ? label : '') || row.cad_layer;
           if (!title) return;
           const html = [
             `<div style="font-weight:600">${escapeHtml(title)}</div>`,
