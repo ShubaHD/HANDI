@@ -8,6 +8,7 @@ import {
   cadLabelTextColorFromStyle,
   cadLabelTextSizeFromStyle,
 } from '@/features/cad/cadLayerLabelStyle';
+import { MAP_SYMBOL_FONT } from '@/map/mapStyleGlyphs';
 import { isCadLabelKind, usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
 import type { FeatureCollection } from 'geojson';
 
@@ -17,8 +18,7 @@ const PREFIX_LAYER = 'cadlay-';
 /** MapLibre expression: resolved label string from GeoJSON properties (new + legacy imports). */
 const cadLabelExpr: unknown[] = ['coalesce', ['get', 'cad_label'], ['get', 'dxfText'], ['get', 'text'], ''];
 
-/** Glyphs on demotiles host (same as app basemap `glyphs` URL). */
-const CAD_LABEL_TEXT_FONT = ['Open Sans Regular'];
+const CAD_LABEL_TEXT_FONT = MAP_SYMBOL_FONT;
 
 function styleDefaults(row: CadLayerRow): { color: string; width: number; opacity: number } {
   const s = row.style as { color?: string; width?: number; opacity?: number };

@@ -1,5 +1,6 @@
 import type { Map as MlMap, GeoJSONSource } from 'maplibre-gl';
 import type { Zone } from '@/lib/types';
+import { MAP_SYMBOL_FONT } from '@/map/mapStyleGlyphs';
 
 const SOURCE_ID = 'zones-source';
 const LAYER_FILL = 'zones-fill';
@@ -95,7 +96,7 @@ export function addZonesLayer(map: MlMap) {
     ] as never,
     layout: {
       'text-field': ['get', 'name'],
-      'text-font': ['Open Sans Regular'] as never,
+      'text-font': MAP_SYMBOL_FONT as never,
       'text-size': 12,
       'symbol-placement': 'point',
     },

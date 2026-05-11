@@ -1,13 +1,14 @@
 import type { Map as MlMap, GeoJSONSource } from 'maplibre-gl';
 import { pointDisplayColor } from '@/features/points/pointStyle';
 import type { PointOfInterest } from '@/lib/types';
+import { MAP_SYMBOL_FONT } from '@/map/mapStyleGlyphs';
 
 const SOURCE_ID = 'poi-source';
 const LAYER_CIRCLES = 'poi-circles';
 const LAYER_LABELS = 'poi-labels';
 
 const POI_NAME_EXPR: unknown[] = ['coalesce', ['get', 'name'], ''];
-const POI_LABEL_TEXT_FONT = ['Open Sans Regular'];
+const POI_LABEL_TEXT_FONT = MAP_SYMBOL_FONT;
 
 function pointsToGeoJSON(points: PointOfInterest[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {

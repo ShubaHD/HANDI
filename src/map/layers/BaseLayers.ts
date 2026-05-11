@@ -1,4 +1,5 @@
 import type { StyleSpecification } from 'maplibre-gl';
+import { MAP_GLYPHS_URL } from '@/map/mapStyleGlyphs';
 
 export interface BaseMapDef {
   id: string;
@@ -28,7 +29,7 @@ export const BASE_MAPS: BaseMapDef[] = [
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Tiles: MapLibre demo',
     tileUrls: ['https://demotiles.maplibre.org/tiles/tiles/{z}/{x}/{y}.png'],
     maxzoom: 19,
-    styleUrl: 'https://demotiles.maplibre.org/style.json',
+    /** Nu folosi styleUrl de la demotiles: style-ul lor trage glyph-uri 404 pentru Open Sans. */
     default: true,
   },
   {
@@ -104,7 +105,7 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
     const maxz = base.maxzoom;
     return {
       version: 8,
-      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      glyphs: MAP_GLYPHS_URL,
       sources: {
         base: {
           type: 'raster',
@@ -132,7 +133,7 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
 
   return {
     version: 8,
-    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    glyphs: MAP_GLYPHS_URL,
     sources: {
       base: {
         type: 'raster',

@@ -1,5 +1,6 @@
 import type { Map as MlMap, GeoJSONSource } from 'maplibre-gl';
 import type { Annotation } from '@/lib/types';
+import { MAP_SYMBOL_FONT } from '@/map/mapStyleGlyphs';
 
 const SOURCE_ID = 'annotations-source';
 const LAYER_SYMBOLS = 'annotations-symbols';
@@ -7,7 +8,7 @@ const LAYER_TEXT = 'annotations-text';
 const LAYER_ARROWS = 'annotations-arrows';
 const LAYER_ARROW_HEADS = 'annotations-arrow-heads';
 
-const ANNOT_TEXT_FONT = ['Open Sans Regular'];
+const ANNOT_TEXT_FONT = MAP_SYMBOL_FONT;
 const ANNOT_TEXT_EXPR: unknown[] = ['coalesce', ['get', 'text'], ''];
 
 function symbolLabel(symbol: string): string {
