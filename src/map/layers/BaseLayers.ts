@@ -1,5 +1,5 @@
 import type { StyleSpecification } from 'maplibre-gl';
-import { MAP_GLYPHS_URL } from '@/map/mapStyleGlyphs';
+import { getMapGlyphsUrl } from '@/map/mapStyleGlyphs';
 
 export interface BaseMapDef {
   id: string;
@@ -105,7 +105,7 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
     const maxz = base.maxzoom;
     return {
       version: 8,
-      glyphs: MAP_GLYPHS_URL,
+      glyphs: getMapGlyphsUrl(),
       sources: {
         base: {
           type: 'raster',
@@ -133,7 +133,7 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
 
   return {
     version: 8,
-    glyphs: MAP_GLYPHS_URL,
+    glyphs: getMapGlyphsUrl(),
     sources: {
       base: {
         type: 'raster',
