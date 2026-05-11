@@ -147,6 +147,17 @@ export function MapView({
       return getDefaultBaseMap();
     }
   });
+  /** False cât timp LS are `pmtiles-*` dar încă nu am încărcat arhiva din Dexie (altfel pornim cu maplibre-demo + demotiles). */
+  const [basemapReady, setBasemapReady] = useState(() => {
+    try {
+      if (typeof window === 'undefined') return true;
+      if (new URLSearchParams(window.location.search).has('debugMap')) return true;
+      const s = localStorage.getItem(BASEMAP_KEY);
+      return !s?.startsWith('pmtiles-');
+    } catch {
+      return true;
+    }
+  });
   const [hillshadeOn, setHillshadeOn] = useState(false);
   const [hillshadeStrength, setHillshadeStrength] = useState(0.6);
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -161,7 +172,8 @@ export function MapView({
   const maplibreQs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const forceLeaflet = Boolean(maplibreQs?.has('leaflet'));
   const forceMaplibre = Boolean(maplibreQs?.has('maplibre'));
-  const basemapNeedsMapLibre = Boolean(base.pmtiles && base.pmtilesUrl);
+  const basemapNeedsMapLibre =
+    !basemapReady || Boolean(base.pmtiles && base.pmtilesUrl);
   /** Leaflet implicit; MapLibre forțat cu ?maplibre=1 sau când basemap-ul e PMTiles (offline). */
   const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
 
@@ -203,15 +215,28 @@ export function MapView({
     void (async () => {
       try {
         if (typeof window === 'undefined') return;
-        if (new URLSearchParams(window.location.search).has('debugMap')) return;
+        if (new URLSearchParams(window.location.search).has('debugMap')) {
+          basemapLsHydrateDoneRef.current = true;
+          setBasemapReady(true);
+          return;
+        }
         const saved = localStorage.getItem(BASEMAP_KEY);
-        if (!saved?.startsWith('pmtiles-')) return;
-        if (getBaseMapById(saved)) return;
+        if (!saved?.startsWith('pmtiles-')) {
+          basemapLsHydrateDoneRef.current = true;
+          setBasemapReady(true);
+          return;
+        }
+        if (getBaseMapById(saved)) {
+          basemapLsHydrateDoneRef.current = true;
+          setBasemapReady(true);
+          return;
+        }
         const offline = await buildBaseMapsFromArchives();
         const found = offline.find((b) => b.id === saved);
         if (found) {
           setBase(found);
         } else {
+          setBase(getDefaultBaseMap());
           try {
             localStorage.setItem(BASEMAP_KEY, getDefaultBaseMap().id);
           } catch {
@@ -222,6 +247,7 @@ export function MapView({
         /* ignore */
       } finally {
         basemapLsHydrateDoneRef.current = true;
+        setBasemapReady(true);
       }
     })();
   }, []);
@@ -301,6 +327,7 @@ export function MapView({
     }
     if (!containerRef.current) return;
     if (mapRef.current) return;
+    if (!basemapReady) return;
 
     const last = readLastViewport();
     const map = new maplibregl.Map({
@@ -612,10 +639,15 @@ export function MapView({
         };
       }
       if (layerId.startsWith(getCadLayerPrefix())) {
+        const desc = asText(props.handi_description).trim();
+        const lines =
+          desc.length > 0
+            ? [{ label: 'Descriere', value: desc.length > 140 ? `${desc.slice(0, 137)}…` : desc }]
+            : undefined;
         return {
           title,
-          subtitle: 'CAD',
-          lines: [{ label: 'Layer', value: layerId.replace(getCadLayerPrefix(), '') }],
+          subtitle: 'Etichetă / nume CAD',
+          lines,
         };
       }
       return { title, subtitle: subtitleFromLayer(layerId) };
@@ -676,7 +708,7 @@ export function MapView({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useLeaflet]);
+  }, [useLeaflet, basemapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1009,6 +1041,14 @@ export function MapView({
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
+
+  if (!basemapReady) {
+    return (
+      <div className="relative flex h-full w-full min-h-0 items-center justify-center bg-slate-950 px-4 text-center text-sm text-slate-400">
+        Se încarcă harta offline din memoria locală…
+      </div>
+    );
+  }
 
   if (useLeaflet) {
     return (
