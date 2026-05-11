@@ -437,7 +437,7 @@ export function LeafletView({
           const props = (feat.properties as Record<string, unknown> | null) ?? {};
           const label = cadFeatureLabelText(props);
 
-          if (row.kind === 'labels' && label && !isJunkCadPlaceholderLabel(label)) {
+          if ((row.kind === 'labels' || row.kind === 'caves') && label && !isJunkCadPlaceholderLabel(label)) {
             const m = L.circleMarker(latlng, {
               radius: 4,
               color: st.color,
@@ -469,7 +469,7 @@ export function LeafletView({
 
           // POINT entities on non-label layers, or empty label rows: no default pin.
           return L.circleMarker(latlng, {
-            radius: row.kind === 'labels' ? 0 : 3,
+            radius: row.kind === 'labels' || row.kind === 'caves' ? 0 : 3,
             opacity: 0,
             fillOpacity: 0,
             weight: 0,

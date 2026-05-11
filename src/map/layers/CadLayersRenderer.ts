@@ -47,12 +47,14 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
     const srcId = `${PREFIX_SRC}${row.id}`;
     const st = styleDefaults(row);
 
-    const dataFc = row.kind === 'labels' ? sanitizeCadLabelsFeatureCollection(fc) : fc;
+    // Same DXF layer often mixes cave polylines + TEXT (e.g. layer "CAVE" → kind `caves`); sanitize keeps lines + label points.
+    const useSanitizedLabelPoints = row.kind === 'labels' || row.kind === 'caves';
+    const dataFc = useSanitizedLabelPoints ? sanitizeCadLabelsFeatureCollection(fc) : fc;
     if (row.kind === 'labels' && (!dataFc.features || dataFc.features.length === 0)) continue;
 
     map.addSource(srcId, { type: 'geojson', data: dataFc });
 
-    if (row.kind === 'labels') {
+    const addCadTextSymbolLayer = () => {
       map.addLayer({
         id: `${PREFIX_LAYER}${row.id}-sym`,
         type: 'symbol',
@@ -80,7 +82,15 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
           'text-opacity': st.opacity,
         },
       });
+    };
+
+    if (row.kind === 'labels') {
+      addCadTextSymbolLayer();
       continue;
+    }
+
+    if (row.kind === 'caves') {
+      addCadTextSymbolLayer();
     }
 
     if (row.kind === 'springs' || row.kind === 'avens') {
