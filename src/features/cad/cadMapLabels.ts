@@ -1,10 +1,20 @@
 import type { Feature, FeatureCollection } from 'geojson';
 
+function stripDisallowedControls(str: string): string {
+  let out = '';
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    const allowed = c === 9 || c === 10 || c === 13;
+    if (c < 32 && !allowed) continue;
+    out += str[i];
+  }
+  return out;
+}
+
 /** Strip control chars / ZWSP / crude AutoCAD field wrappers so labels map cleanly in MapLibre. */
 export function normalizeCadMapLabelString(s: string): string {
-  return String(s ?? '')
+  return stripDisallowedControls(String(s ?? ''))
     .replace(/[\u200b-\u200d\ufeff]/g, '')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
     .replace(/%<[^>%]*>%/g, '')
     .replace(/\s+/g, ' ')
     .trim();

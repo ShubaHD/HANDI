@@ -29,6 +29,7 @@
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "dxf-parser": "^1.1.2",
+    "fflate": "^0.8.2",
     "leaflet": "^1.9.4",
     "maplibre-gl": "^5.24.0",
     "pmtiles": "^4.4.1",

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { POINT_TYPES, type PointOfInterest } from '@/lib/types';
 import { fetchPhotosForPoint, uploadPhotos, deletePhoto, type PhotoRecord } from './photos';
 import { safeDeletePoint } from '@/lib/db/safeApi';
+import { appleMapsDirectionsUrl, googleMapsDirectionsUrl } from './navigationUrls';
 
 interface Props {
   point: PointOfInterest;
@@ -105,6 +106,25 @@ export function PointDetail({ point, onClose, onChanged }: Props) {
             {point.elevation_m != null ? `${Math.round(point.elevation_m)} m` : '-'}
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+        <a
+          href={googleMapsDirectionsUrl(point.lat, point.lon)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block text-center py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium"
+        >
+          Navighează spre (Google Maps)
+        </a>
+        <a
+          href={appleMapsDirectionsUrl(point.lat, point.lon)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block text-center py-2.5 rounded-lg bg-slate-800 border border-slate-600 hover:bg-slate-700 text-slate-100 text-sm font-medium"
+        >
+          Deschide în Apple Maps
+        </a>
       </div>
 
       {point.description && (

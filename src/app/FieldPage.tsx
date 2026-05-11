@@ -4,8 +4,6 @@ import { MapView } from '@/map/MapView';
 import { PointForm } from '@/features/points/PointForm';
 import { PointsList } from '@/features/points/PointsList';
 import { PointDetail } from '@/features/points/PointDetail';
-import { ZoneForm } from '@/features/zones/ZoneForm';
-import { ZonesList } from '@/features/zones/ZonesList';
 import { TrackRecorderPanel } from '@/features/tracks/TrackRecorderPanel';
 import { TracksPanel } from '@/features/tracks/TracksPanel';
 import { RastersPanel } from '@/features/rasters/RastersPanel';
@@ -19,7 +17,6 @@ import type { PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
 import type { RasterLayerState } from '@/map/layers/RasterOverlayLayer';
 import { useAuth } from './auth/AuthProvider';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { centroid as turfCentroid } from '@turf/turf';
 import {
   fetchPointsCached,
   fetchZonesCached,
@@ -59,7 +56,7 @@ interface PendingPoint {
   elevation: number | null;
 }
 
-type Tab = 'points' | 'zones' | 'tracks' | 'rasters' | 'cad';
+type Tab = 'points' | 'tracks' | 'rasters' | 'cad';
 
 export default function FieldPage() {
   const { user, signOut } = useAuth();
@@ -85,9 +82,6 @@ export default function FieldPage() {
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<PointOfInterest | null>(null);
 
-  const [drawZoneMode, setDrawZoneMode] = useState(false);
-  const [pendingZone, setPendingZone] = useState<GeoJSON.Polygon | null>(null);
-
   const [annotMode, setAnnotMode] = useState<'off' | 'symbol' | 'text' | 'arrow'>('off');
   const [annotVisibility, setAnnotVisibility] = useState<Visibility>('club');
   const [annotSymbol, setAnnotSymbol] = useState<AnnotationSymbol>('dolina');
@@ -103,8 +97,11 @@ export default function FieldPage() {
   const [pmtilesZoomById, setPmtilesZoomById] = useState<Record<string, { minzoom: number; maxzoom: number }>>({});
   const [showRasterUpload, setShowRasterUpload] = useState(false);
   const [currentBbox, setCurrentBbox] = useState<BBox | null>(null);
+  const [lastMapZoom, setLastMapZoom] = useState(14);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** Ultima poziție GPS afișată pe hartă (buton + sau GPS pe hartă). */
+  const [myLocation, setMyLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [flyTo, setFlyTo] = useState<{ lng: number; lat: number; zoom?: number } | null>(null);
   const [fitBounds, setFitBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [syncTick, setSyncTick] = useState(0);
@@ -233,7 +230,6 @@ export default function FieldPage() {
   );
 
   const onMapClick = (lng: number, lat: number) => {
-    if (drawZoneMode) return;
     if (annotOpen && annotMode !== 'off') {
       void (async () => {
         try {
@@ -265,7 +261,7 @@ export default function FieldPage() {
           if (annotMode === 'text') {
             const text = annotText.trim();
             if (!text) {
-              alert('Introdu textul in sidebar (tab Zone).');
+              alert('Introdu textul în panoul de adnotări (butonul A).');
               return;
             }
             const r = await safeCreateAnnotation({
@@ -326,12 +322,15 @@ export default function FieldPage() {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        setMyLocation({ lat, lon });
         setPendingPoint({
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
+          lat,
+          lon,
           elevation: pos.coords.altitude,
         });
-        setFlyTo({ lng: pos.coords.longitude, lat: pos.coords.latitude, zoom: 16 });
+        setFlyTo({ lng: lon, lat, zoom: 16 });
       },
       (e) => alert('Nu pot obtine pozitia: ' + e.message),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
@@ -415,7 +414,7 @@ export default function FieldPage() {
           } md:flex flex-col w-full md:w-80 lg:w-96 bg-slate-900 border-r border-slate-800 absolute md:relative inset-0 md:inset-auto z-10`}
         >
           <nav className="flex border-b border-slate-700 bg-slate-950">
-            {(['points', 'zones', 'tracks', 'rasters', 'cad'] as Tab[]).map((t) => (
+            {(['points', 'tracks', 'rasters', 'cad'] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setActiveTab(t)}
@@ -427,13 +426,11 @@ export default function FieldPage() {
               >
                 {t === 'points'
                   ? `Puncte (${points.length})`
-                  : t === 'zones'
-                    ? `Zone (${zones.length})`
-                    : t === 'tracks'
-                      ? `Trasee (${tracks.length})`
-                      : t === 'rasters'
-                        ? `Rasters (${rasters.length})`
-                        : `CAD (${cadImports.length})`}
+                  : t === 'tracks'
+                    ? `Trasee (${tracks.length})`
+                    : t === 'rasters'
+                      ? `Rasters (${rasters.length})`
+                      : `CAD (${cadImports.length})`}
               </button>
             ))}
           </nav>
@@ -449,41 +446,6 @@ export default function FieldPage() {
               }}
               onChanged={() => void reload()}
             />
-          )}
-
-          {activeTab === 'zones' && (
-            <div className="flex flex-col h-full">
-              <div className="p-3 border-b border-slate-700">
-                <button
-                  onClick={() => setDrawZoneMode(true)}
-                  disabled={drawZoneMode}
-                  className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-700 text-white font-medium text-sm"
-                >
-                  {drawZoneMode ? 'Desenare in curs...' : 'Deseneaza zona pe harta'}
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                <ZonesList
-                  zones={zones}
-                  onSelect={(z) => {
-                    const c = turfCentroid({
-                      type: 'Feature',
-                      geometry: z.geom,
-                      properties: {},
-                    });
-                    if (c.geometry.type === 'Point') {
-                      setFlyTo({
-                        lng: c.geometry.coordinates[0],
-                        lat: c.geometry.coordinates[1],
-                        zoom: 14,
-                      });
-                    }
-                    setSidebarOpen(false);
-                  }}
-                  onChanged={() => void reload()}
-                />
-              </div>
-            </div>
           )}
 
           {activeTab === 'tracks' && (
@@ -659,11 +621,9 @@ export default function FieldPage() {
             rasterState={rasterStateWithPmtiles}
             cadLayers={cadLayers}
             liveTrack={liveTrack}
-            drawZoneMode={drawZoneMode}
-            onZoneDrawn={(poly) => {
-              setDrawZoneMode(false);
-              setPendingZone(poly);
-            }}
+            drawZoneMode={false}
+            onZoneDrawn={() => {}}
+            annotationPlacementMode={annotOpen && annotMode !== 'off'}
             onMapClick={onMapClick}
             onCadLabelTap={handleCadLabelTap}
             onPointClick={(id) => {
@@ -673,9 +633,23 @@ export default function FieldPage() {
                 setSelectedPoint(p);
               }
             }}
-            onBoundsChange={setCurrentBbox}
+            onBoundsChange={(b) => {
+              setCurrentBbox({
+                minLon: b.minLon,
+                minLat: b.minLat,
+                maxLon: b.maxLon,
+                maxLat: b.maxLat,
+              });
+              if (typeof b.zoom === 'number' && Number.isFinite(b.zoom)) {
+                setLastMapZoom(b.zoom);
+              }
+            }}
+            viewportBbox={currentBbox}
+            viewportZoom={lastMapZoom}
             flyTo={flyTo}
             fitBounds={fitBounds}
+            myLocation={myLocation}
+            onMyLocation={(lat, lon) => setMyLocation({ lat, lon })}
           />
 
           <div className="absolute bottom-6 left-3 z-20 pointer-events-auto">
@@ -775,24 +749,13 @@ export default function FieldPage() {
           </div>
 
           {/* FAB explicit GPS: nu echivalează cu click pe hartă (evită deschiderea accidentală la explorare). */}
-          {!drawZoneMode && (
-            <button
-              onClick={addAtCurrentLocation}
-              className="absolute bottom-6 right-3 z-10 bg-brand-600 hover:bg-brand-700 rounded-full w-14 h-14 shadow-xl text-2xl font-bold flex items-center justify-center"
-              title="Adauga punct la pozitia mea (GPS)"
-            >
-              +
-            </button>
-          )}
-
-          {drawZoneMode && (
-            <button
-              onClick={() => setDrawZoneMode(false)}
-              className="absolute bottom-6 right-3 z-10 bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded-xl px-4 py-2 shadow-xl text-sm"
-            >
-              Anuleaza desenarea
-            </button>
-          )}
+          <button
+            onClick={addAtCurrentLocation}
+            className="absolute bottom-6 right-3 z-10 bg-brand-600 hover:bg-brand-700 rounded-full w-14 h-14 shadow-xl text-2xl font-bold flex items-center justify-center"
+            title="Adauga punct la pozitia mea (GPS)"
+          >
+            +
+          </button>
 
           {!isSupabaseConfigured && (
             <div className="absolute top-3 right-3 bg-amber-900/90 border border-amber-700 text-amber-100 rounded-xl p-3 max-w-xs text-xs">
@@ -809,24 +772,15 @@ export default function FieldPage() {
               initialLon={pendingPoint.lon}
               initialElevation={pendingPoint.elevation}
               getMapCenter={mapCenterForPointForm}
+              onGpsLocated={(lat, lon) => {
+                setMyLocation({ lat, lon });
+                setFlyTo({ lng: lon, lat, zoom: 16 });
+              }}
               onCreated={() => {
                 setPendingPoint(null);
                 void reload();
               }}
               onCancel={() => setPendingPoint(null)}
-            />
-          </Modal>
-        )}
-
-        {pendingZone && (
-          <Modal>
-            <ZoneForm
-              geom={pendingZone}
-              onCreated={() => {
-                setPendingZone(null);
-                void reload();
-              }}
-              onCancel={() => setPendingZone(null)}
             />
           </Modal>
         )}

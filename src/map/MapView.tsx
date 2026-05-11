@@ -50,14 +50,29 @@ interface Props {
   liveTrack: [number, number][];
   drawZoneMode: boolean;
   onZoneDrawn: (polygon: GeoJSON.Polygon) => void;
+  /** Când e activ (ex. panoul A), click-ul pe hartă merge la onMapClick chiar dacă există CAD / punct / zonă sub cursor. */
+  annotationPlacementMode?: boolean;
   onMapClick?: (lng: number, lat: number) => void;
   onPointClick?: (id: string) => void;
   onZoneClick?: (id: string) => void;
   /** Tap / click on a CAD text label (MapLibre: symbol layer). */
   onCadLabelTap?: (payload: CadLabelEditTapPayload) => void;
-  onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
+  onBoundsChange?: (b: {
+    minLon: number;
+    minLat: number;
+    maxLon: number;
+    maxLat: number;
+    zoom?: number;
+  }) => void;
+  /** Pentru pachet offline: ultimul bbox + zoom de pe hartă. */
+  viewportBbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
+  viewportZoom?: number;
   flyTo?: { lng: number; lat: number; zoom?: number } | null;
   fitBounds?: [[number, number], [number, number]] | null;
+  /** Marcaj al ultimei poziții GPS pe hartă. */
+  myLocation?: { lat: number; lon: number } | null;
+  /** Apelat când utilizatorul apasă GPS pe hartă (în plus față de actualizarea marcajului din `myLocation`). */
+  onMyLocation?: (lat: number, lon: number) => void;
 }
 
 export interface ViewportState {
@@ -80,16 +95,22 @@ export function MapView({
   liveTrack,
   drawZoneMode,
   onZoneDrawn,
+  annotationPlacementMode = false,
   onMapClick,
   onPointClick,
   onZoneClick,
   onCadLabelTap,
   onBoundsChange,
+  viewportBbox = null,
+  viewportZoom,
   flyTo,
   fitBounds,
+  myLocation = null,
+  onMyLocation,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
+  const userLocationMarkerRef = useRef<maplibregl.Marker | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [hud, setHud] = useState<{ lng: number; lat: number; zoom: number } | null>(null);
@@ -142,6 +163,7 @@ export function MapView({
     onCadLabelTap,
     onZoneDrawn,
     onBoundsChange,
+    annotationPlacementMode,
   });
   handlersRef.current = {
     onMapClick,
@@ -150,6 +172,7 @@ export function MapView({
     onCadLabelTap,
     onZoneDrawn,
     onBoundsChange,
+    annotationPlacementMode,
   };
 
   const installLayers = (map: MlMap) => {
@@ -349,6 +372,7 @@ export function MapView({
         minLat: b.getSouth(),
         maxLon: b.getEast(),
         maxLat: b.getNorth(),
+        zoom: map.getZoom(),
       });
     });
 
@@ -364,6 +388,10 @@ export function MapView({
 
     map.on('click', (e) => {
       if (drawRef.current?.enabled) return;
+      if (handlersRef.current.annotationPlacementMode) {
+        handlersRef.current.onMapClick?.(e.lngLat.lng, e.lngLat.lat);
+        return;
+      }
       const cadSymLayers = (map.getStyle().layers ?? [])
         .map((l) => l.id)
         .filter((id) => id.startsWith(getCadLayerPrefix()) && id.endsWith('-sym'));
@@ -632,6 +660,35 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
+    const remove = () => {
+      userLocationMarkerRef.current?.remove();
+      userLocationMarkerRef.current = null;
+    };
+    remove();
+    if (!map || !myLocation) return;
+
+    const place = () => {
+      const m = mapRef.current;
+      const loc = myLocation;
+      if (!m || !loc) return;
+      remove();
+      const el = document.createElement('div');
+      el.setAttribute('aria-label', 'Poziția mea');
+      el.style.cssText =
+        'width:20px;height:20px;border:3px solid #fff;border-radius:50%;background:#2563eb;box-shadow:0 2px 8px rgba(0,0,0,0.35);pointer-events:none;';
+      userLocationMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([loc.lon, loc.lat])
+        .addTo(m);
+    };
+
+    if (map.loaded()) place();
+    else map.once('load', place);
+
+    return remove;
+  }, [myLocation]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map) return;
     if (drawZoneMode) {
       const draw = new TerraDraw({
@@ -671,10 +728,13 @@ export function MapView({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        onMyLocation?.(lat, lon);
         const map = mapRef.current;
         if (!map) return;
         map.flyTo({
-          center: [pos.coords.longitude, pos.coords.latitude],
+          center: [lon, lat],
           zoom: 16,
           duration: 1500,
         });
@@ -703,11 +763,13 @@ export function MapView({
             tracks={tracks}
             annotations={annotations}
             cadLayers={cadLayers}
+            annotationPlacementMode={annotationPlacementMode}
             onMapClick={onMapClick}
             onCadLabelTap={onCadLabelTap}
             onBoundsChange={onBoundsChange}
             flyTo={flyTo}
             fitBounds={fitBounds}
+            myLocation={myLocation}
           />
         </div>
 
@@ -730,6 +792,12 @@ export function MapView({
               onToggleHillshade={setHillshadeOn}
               hillshadeStrength={hillshadeStrength}
               onChangeHillshadeStrength={setHillshadeStrength}
+              viewportBbox={viewportBbox}
+              viewportZoom={viewportZoom}
+              onOfflinePackComplete={(b) => {
+                setBase(b);
+                setShowSwitcher(false);
+              }}
             />
           )}
         </div>
@@ -788,6 +856,12 @@ export function MapView({
             onToggleHillshade={setHillshadeOn}
             hillshadeStrength={hillshadeStrength}
             onChangeHillshadeStrength={setHillshadeStrength}
+            viewportBbox={viewportBbox}
+            viewportZoom={viewportZoom}
+            onOfflinePackComplete={(b) => {
+              setBase(b);
+              setShowSwitcher(false);
+            }}
           />
         )}
       </div>

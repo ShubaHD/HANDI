@@ -170,3 +170,22 @@ function archiveToBaseMap(a: PMTilesArchive): BaseMapDef {
     pmtilesUrl: url,
   };
 }
+
+/** Salveaza un PMTiles generat in-app (ex. pachet offline) ca basemap local. */
+export async function saveGeneratedBasemapBlob(blob: Blob, name: string): Promise<BaseMapDef> {
+  const meta = await readArchiveMetadata(blob);
+  const key = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const archive: PMTilesArchive = {
+    key,
+    name,
+    blob,
+    size: blob.size,
+    bounds: meta.bounds,
+    minzoom: meta.minzoom,
+    maxzoom: meta.maxzoom,
+    addedAt: Date.now(),
+    kind: 'basemap',
+  };
+  await db.pmtiles.put(archive);
+  return archiveToBaseMap(archive);
+}

@@ -9,6 +9,8 @@ interface Props {
   initialElevation?: number | null;
   /** Centrul vizualizării curente pe hartă (din bbox), pentru butonul „Folosește centrul hărții”. */
   getMapCenter?: () => { lat: number; lon: number } | null;
+  /** După „Poziția mea (GPS)” — actualizează marcajul pe hartă. */
+  onGpsLocated?: (lat: number, lon: number) => void;
   onCreated: () => void;
   onCancel: () => void;
 }
@@ -25,6 +27,7 @@ export function PointForm({
   initialLon,
   initialElevation,
   getMapCenter,
+  onGpsLocated,
   onCreated,
   onCancel,
 }: Props) {
@@ -56,8 +59,11 @@ export function PointForm({
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLatStr(String(pos.coords.latitude));
-        setLonStr(String(pos.coords.longitude));
+        const la = pos.coords.latitude;
+        const lo = pos.coords.longitude;
+        setLatStr(String(la));
+        setLonStr(String(lo));
+        onGpsLocated?.(la, lo);
         if (pos.coords.altitude != null && Number.isFinite(pos.coords.altitude)) {
           setElevStr(String(Math.round(pos.coords.altitude)));
         }

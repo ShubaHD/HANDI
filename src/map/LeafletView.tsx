@@ -47,11 +47,20 @@ interface Props {
   tracks: Track[];
   annotations: Annotation[];
   cadLayers: CadLayerRow[];
+  /** Când panoul de adnotări plasează pe hartă: nu interceptăm click-ul pe etichete CAD. */
+  annotationPlacementMode?: boolean;
   onMapClick?: (lng: number, lat: number) => void;
   onCadLabelTap?: (payload: CadLabelEditTapPayload) => void;
-  onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
+  onBoundsChange?: (b: {
+    minLon: number;
+    minLat: number;
+    maxLon: number;
+    maxLat: number;
+    zoom?: number;
+  }) => void;
   flyTo?: { lng: number; lat: number; zoom?: number } | null;
   fitBounds?: [[number, number], [number, number]] | null;
+  myLocation?: { lat: number; lon: number } | null;
 }
 
 function toPointFC(points: PointOfInterest[]): GeoJSON.FeatureCollection {
@@ -130,12 +139,19 @@ export function LeafletView({
   tracks,
   annotations,
   cadLayers,
+  annotationPlacementMode = false,
   onMapClick,
   onCadLabelTap,
   onBoundsChange,
   flyTo,
   fitBounds,
+  myLocation = null,
 }: Props) {
+  const onMapClickRef = useRef(onMapClick);
+  const onBoundsChangeRef = useRef(onBoundsChange);
+  onMapClickRef.current = onMapClick;
+  onBoundsChangeRef.current = onBoundsChange;
+
   const divRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const hoverTimerRef = useRef<number | null>(null);
@@ -147,6 +163,7 @@ export function LeafletView({
     tracks?: L.GeoJSON;
     annotations?: L.LayerGroup;
     cad?: L.LayerGroup;
+    userLoc?: L.CircleMarker;
   }>({});
 
   const pointsFC = useMemo(() => toPointFC(points), [points]);
@@ -199,16 +216,17 @@ export function LeafletView({
     const last = readLastViewport();
     map.setView([last.lat, last.lng], last.zoom);
 
-    map.on('click', (e) => onMapClick?.(e.latlng.lng, e.latlng.lat));
+    map.on('click', (e) => onMapClickRef.current?.(e.latlng.lng, e.latlng.lat));
     map.on('moveend', () => {
       const c = map.getCenter();
       writeLastViewport({ lng: c.lng, lat: c.lat, zoom: map.getZoom() });
       const b = map.getBounds();
-      onBoundsChange?.({
+      onBoundsChangeRef.current?.({
         minLon: b.getWest(),
         minLat: b.getSouth(),
         maxLon: b.getEast(),
         maxLat: b.getNorth(),
+        zoom: map.getZoom(),
       });
     });
 
@@ -488,12 +506,15 @@ export function LeafletView({
             const lbl = cadFeatureLabelText(props);
             if (lbl && !isJunkCadPlaceholderLabel(lbl)) {
               lyr.on('click', (ev: L.LeafletMouseEvent) => {
+                if (annotationPlacementMode) {
+                  return;
+                }
                 L.DomEvent.stopPropagation(ev);
                 const fid =
                   typeof props[CAD_FEATURE_ID_KEY] === 'string'
                     ? (props[CAD_FEATURE_ID_KEY] as string)
                     : undefined;
-                onCadLabelTap({
+                onCadLabelTap?.({
                   layerRowId: row.id,
                   lon: ev.latlng.lng,
                   lat: ev.latlng.lat,
@@ -517,7 +538,7 @@ export function LeafletView({
     }
     group.addTo(map);
     layersRef.current.cad = group;
-  }, [cadLayers, clearHover, scheduleHover, onCadLabelTap]);
+  }, [cadLayers, clearHover, scheduleHover, onCadLabelTap, annotationPlacementMode]);
 
   // viewport controls
   useEffect(() => {
@@ -534,6 +555,38 @@ export function LeafletView({
       [fitBounds[1][1], fitBounds[1][0]],
     ]);
   }, [fitBounds]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const prev = layersRef.current.userLoc;
+    if (prev) {
+      try {
+        map.removeLayer(prev);
+      } catch {
+        /* ignore */
+      }
+      layersRef.current.userLoc = undefined;
+    }
+    if (!myLocation) return;
+    const m = L.circleMarker([myLocation.lat, myLocation.lon], {
+      radius: 11,
+      color: '#ffffff',
+      weight: 3,
+      fillColor: '#2563eb',
+      fillOpacity: 1,
+      className: 'handi-my-location-marker',
+      pane: 'markerPane',
+    });
+    m.bindTooltip('Poziția mea (GPS)', { direction: 'top', offset: [0, -8] });
+    m.addTo(map);
+    layersRef.current.userLoc = m;
+    return () => {
+      const mp = mapRef.current;
+      if (mp?.hasLayer?.(m)) mp.removeLayer(m);
+      if (layersRef.current.userLoc === m) layersRef.current.userLoc = undefined;
+    };
+  }, [myLocation]);
 
   return <div ref={divRef} className="absolute inset-0" />;
 }
