@@ -1,6 +1,7 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { CadLayerRow } from '@/features/cad/api';
 import { sanitizeCadLabelsFeatureCollection } from '@/features/cad/cadMapLabels';
+import { cadLabelMaxZoomFromStyle, cadLabelMinZoomFromStyle } from '@/features/cad/cadLayerLabelStyle';
 import { isCadLabelKind, usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
 import type { FeatureCollection } from 'geojson';
 
@@ -23,11 +24,9 @@ function styleDefaults(row: CadLayerRow): { color: string; width: number; opacit
 }
 
 function cadLabelZoomBounds(row: CadLayerRow): { minzoom?: number; maxzoom?: number } {
-  const s = row.style as { cadLabelMinZoom?: unknown; cadLabelMaxZoom?: unknown };
-  const min =
-    typeof s.cadLabelMinZoom === 'number' && Number.isFinite(s.cadLabelMinZoom) ? s.cadLabelMinZoom : undefined;
-  const max =
-    typeof s.cadLabelMaxZoom === 'number' && Number.isFinite(s.cadLabelMaxZoom) ? s.cadLabelMaxZoom : undefined;
+  const s = (row.style ?? {}) as Record<string, unknown>;
+  const min = cadLabelMinZoomFromStyle(s);
+  const max = cadLabelMaxZoomFromStyle(s);
   const out: { minzoom?: number; maxzoom?: number } = {};
   if (min != null) out.minzoom = min;
   if (max != null) out.maxzoom = max;

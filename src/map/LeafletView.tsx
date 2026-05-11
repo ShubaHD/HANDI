@@ -8,6 +8,11 @@ import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zo
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
 import { usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
+import {
+  cadLabelLockedFromStyle,
+  cadLabelMaxZoomFromStyle,
+  cadLabelMinZoomFromStyle,
+} from '@/features/cad/cadLayerLabelStyle';
 import { CAD_FEATURE_ID_KEY, type CadLabelEditTapPayload } from '@/features/cad/cadFeatureIds';
 import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from '@/features/cad/cadMapLabels';
 
@@ -627,16 +632,10 @@ export function LeafletView({
     for (const row of cadLayers) {
       if (!row.visible) continue;
       const st = styleCad(row);
-      const rowStyle = row.style as { cadLabelMinZoom?: unknown; cadLabelMaxZoom?: unknown };
-      const minZ =
-        typeof rowStyle.cadLabelMinZoom === 'number' && Number.isFinite(rowStyle.cadLabelMinZoom)
-          ? rowStyle.cadLabelMinZoom
-          : undefined;
-      const maxZ =
-        typeof rowStyle.cadLabelMaxZoom === 'number' && Number.isFinite(rowStyle.cadLabelMaxZoom)
-          ? rowStyle.cadLabelMaxZoom
-          : undefined;
-      const cadLabelLocked = (row.style as { cadLabelLocked?: boolean }).cadLabelLocked === true;
+      const styleRec = (row.style ?? {}) as Record<string, unknown>;
+      const minZ = cadLabelMinZoomFromStyle(styleRec);
+      const maxZ = cadLabelMaxZoomFromStyle(styleRec);
+      const cadLabelLocked = cadLabelLockedFromStyle(styleRec);
 
       const layer = L.geoJSON(row.features as GeoJSON.GeoJsonObject, {
         style: () => st,
@@ -771,6 +770,7 @@ export function LeafletView({
       });
     };
     map.on('zoomend', syncCadTextLabelZoom);
+    map.on('zoom', syncCadTextLabelZoom);
     syncCadTextLabelZoom();
 
     group.addTo(map);
@@ -778,6 +778,7 @@ export function LeafletView({
 
     return () => {
       map.off('zoomend', syncCadTextLabelZoom);
+      map.off('zoom', syncCadTextLabelZoom);
     };
   }, [cadLayers, clearHover, scheduleHover, onCadLabelTap, annotationPlacementMode]);
 

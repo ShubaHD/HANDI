@@ -9,6 +9,11 @@ import {
   type CadLayerRow,
 } from './api';
 import {
+  cadLabelLockedFromStyle,
+  cadLabelMaxZoomFromStyle,
+  cadLabelMinZoomFromStyle,
+} from './cadLayerLabelStyle';
+import {
   classifyCadImport,
   isCadLabelKind,
   mergeCadStyleForNewKind,
@@ -437,6 +442,9 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                         {layers.map((row) => {
                           const open = editingLayerId === row.id;
                           const st = cadStyleDefaults(row);
+                          const rowStyleObj = (row.style ?? {}) as Record<string, unknown>;
+                          const cadMinZUi = cadLabelMinZoomFromStyle(rowStyleObj);
+                          const cadMaxZUi = cadLabelMaxZoomFromStyle(rowStyleObj);
                           return (
                             <li key={row.id} className="px-2 py-1.5 text-xs">
                               <div className="flex items-center gap-2">
@@ -547,7 +555,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                         <input
                                           type="checkbox"
                                           className="w-3.5 h-3.5 accent-brand-500 shrink-0"
-                                          checked={Boolean((row.style as { cadLabelLocked?: boolean }).cadLabelLocked)}
+                                          checked={cadLabelLockedFromStyle(rowStyleObj)}
                                           disabled={editingBusy}
                                           onChange={(e) =>
                                             void saveLayerStyle(row, {
@@ -566,12 +574,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                           step={1}
                                           className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
                                           placeholder="lipsă = orice zoom"
-                                          value={
-                                            typeof (row.style as { cadLabelMinZoom?: number }).cadLabelMinZoom ===
-                                            'number'
-                                              ? (row.style as { cadLabelMinZoom: number }).cadLabelMinZoom
-                                              : ''
-                                          }
+                                          value={cadMinZUi == null ? '' : cadMinZUi}
                                           disabled={editingBusy}
                                           onChange={(e) => {
                                             const raw = e.target.value.trim();
@@ -594,12 +597,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                           step={1}
                                           className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
                                           placeholder="lipsă = mereu vizibile"
-                                          value={
-                                            typeof (row.style as { cadLabelMaxZoom?: number }).cadLabelMaxZoom ===
-                                            'number'
-                                              ? (row.style as { cadLabelMaxZoom: number }).cadLabelMaxZoom
-                                              : ''
-                                          }
+                                          value={cadMaxZUi == null ? '' : cadMaxZUi}
                                           disabled={editingBusy}
                                           onChange={(e) => {
                                             const raw = e.target.value.trim();

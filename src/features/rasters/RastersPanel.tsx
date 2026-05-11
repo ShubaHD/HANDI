@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { RasterKind, RasterOverlay } from '@/lib/types';
-import { deleteRaster } from './api';
+import { deleteRaster, rasterPmtilesHttpUrl } from './api';
 
 const KIND_LABELS: Record<RasterKind, string> = {
   thermal: 'Termal',
@@ -51,8 +51,7 @@ export function RastersPanel({
   const isPmtiles = useMemo(() => {
     const m: Record<string, boolean> = {};
     for (const r of rasters) {
-      const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
-      m[r.id] = meta?.format === 'pmtiles' && typeof meta?.pmtiles_url === 'string';
+      m[r.id] = Boolean(rasterPmtilesHttpUrl(r));
     }
     return m;
   }, [rasters]);

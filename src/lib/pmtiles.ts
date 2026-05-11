@@ -49,7 +49,17 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
     addedAt: Date.now(),
     kind: 'basemap',
   };
-  await db.pmtiles.put(archive);
+  try {
+    await db.pmtiles.put(archive);
+  } catch (e) {
+    const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+    if (name === 'QuotaExceededError') {
+      throw new Error(
+        'Spatiu IndexedDB insuficient. Sterge alte harti offline sau micsoreaza fisierul.',
+      );
+    }
+    throw e;
+  }
   return archive;
 }
 
@@ -116,7 +126,13 @@ export async function saveRemoteRasterArchive(args: {
   onProgress?: (p: { loaded: number; total?: number }) => void;
 }): Promise<PMTilesArchive> {
   const res = await fetch(args.url, { method: 'GET' });
-  if (!res.ok) throw new Error(`Download PMTiles failed (${res.status})`);
+  if (!res.ok) {
+    const hint =
+      res.status === 401 || res.status === 403
+        ? ' Verifica ca bucket-ul Supabase „raster-overlays” e public sau foloseste un URL semnat in metadata.'
+        : '';
+    throw new Error(`Download PMTiles failed (${res.status}).${hint}`);
+  }
   const blob = await readResponseToBlob(res, args.onProgress);
   const meta = await readArchiveMetadata(blob);
   const key = `raster-${args.rasterId}`;
@@ -133,7 +149,17 @@ export async function saveRemoteRasterArchive(args: {
     remoteUrl: args.url,
     rasterId: args.rasterId,
   };
-  await db.pmtiles.put(archive);
+  try {
+    await db.pmtiles.put(archive);
+  } catch (e) {
+    const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+    if (name === 'QuotaExceededError') {
+      throw new Error(
+        'Spatiu IndexedDB insuficient pentru acest PMTiles. Micsoreaza fisierul sau elibereaza spatiu in browser.',
+      );
+    }
+    throw e;
+  }
   return archive;
 }
 
@@ -186,6 +212,16 @@ export async function saveGeneratedBasemapBlob(blob: Blob, name: string): Promis
     addedAt: Date.now(),
     kind: 'basemap',
   };
-  await db.pmtiles.put(archive);
+  try {
+    await db.pmtiles.put(archive);
+  } catch (e) {
+    const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+    if (name === 'QuotaExceededError') {
+      throw new Error(
+        'Spatiu IndexedDB insuficient. Sterge alte harti offline sau micsoreaza pachetul.',
+      );
+    }
+    throw e;
+  }
   return archiveToBaseMap(archive);
 }

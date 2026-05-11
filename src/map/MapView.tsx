@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import maplibregl, { Map as MlMap, NavigationControl, ScaleControl } from 'maplibre-gl';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
+import { cadLabelLockedFromStyle } from '@/features/cad/cadLayerLabelStyle';
 import { buildBaseMapsFromArchives, ensurePMTilesProtocol } from '@/lib/pmtiles';
 import { buildBaseStyle, getBaseMapById, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
 import { LeafletView } from './LeafletView';
@@ -490,7 +491,7 @@ export function MapView({
             f.geometry.type === 'Point'
           ) {
             const row = cadLayersRef.current.find((r) => r.id === rowId);
-            if (row && (row.style as { cadLabelLocked?: boolean }).cadLabelLocked === true) {
+            if (row && cadLabelLockedFromStyle((row.style ?? {}) as Record<string, unknown>)) {
               return;
             }
             const [lon, lat] = f.geometry.coordinates;

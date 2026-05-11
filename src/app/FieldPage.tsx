@@ -13,6 +13,7 @@ import { RasterUploadForm } from '@/features/rasters/RasterUploadForm';
 import {
   fetchRasters,
   rasterCornersFromBounds,
+  rasterPmtilesHttpUrl,
   type BBox,
 } from '@/features/rasters/api';
 import type { PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
@@ -37,6 +38,7 @@ import {
   type CadLayerRow,
 } from '@/features/cad/api';
 import { CadLabelEditSheet } from '@/features/cad/CadLabelEditSheet';
+import { cadLabelLockedFromStyle } from '@/features/cad/cadLayerLabelStyle';
 import {
   type CadLabelEditTapPayload,
   cadLabelTextFromProps,
@@ -224,7 +226,7 @@ export default function FieldPage() {
     (p: CadLabelEditTapPayload) => {
       const row = cadLayers.find((r) => r.id === p.layerRowId);
       if (!row) return;
-      if ((row.style as { cadLabelLocked?: boolean }).cadLabelLocked === true) return;
+      if (cadLabelLockedFromStyle((row.style ?? {}) as Record<string, unknown>)) return;
       const idx = findCadPointLabelFeatureIndex(row.features, {
         fid: p.featureFid,
         lon: p.lon,
@@ -521,11 +523,7 @@ export default function FieldPage() {
 
                   const pmtilesRasters = rasters
                     .filter((r) => rasterVisible.has(r.id))
-                    .map((r) => {
-                      const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
-                      const url = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
-                      return meta?.format === 'pmtiles' && url ? url : null;
-                    })
+                    .map((r) => rasterPmtilesHttpUrl(r))
                     .filter((x): x is string => Boolean(x));
 
                   const pmtiles = await Promise.all(pmtilesRasters.map((u) => checkPmtilesUrl(u)));
@@ -983,9 +981,9 @@ export default function FieldPage() {
                 // If user enables a PMTiles raster, force MapLibre renderer (Leaflet cannot render PMTiles).
                 try {
                   const r = rasters.find((x) => x.id === id);
-                  const meta = r?.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
                   const enabling = !rasterVisible.has(id);
-                  const isPMTiles = meta?.format === 'pmtiles';
+                  const pmUrl = r ? rasterPmtilesHttpUrl(r) : null;
+                  const isPMTiles = Boolean(pmUrl);
                   const qs = new URLSearchParams(window.location.search);
                   if (enabling && isPMTiles && !qs.has('maplibre') && !qs.has('leaflet')) {
                     qs.set('maplibre', '1');
@@ -994,7 +992,6 @@ export default function FieldPage() {
                   }
 
                   // When enabling, also read PMTiles header to set correct min/max zoom (many archives are z16-only).
-                  const pmUrl = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
                   if (enabling && isPMTiles && pmUrl) {
                     void (async () => {
                       try {
@@ -1025,14 +1022,14 @@ export default function FieldPage() {
               onSetOpacity={(id, v) => setRasterOpacity((p) => ({ ...p, [id]: v }))}
               offlinePmtilesById={offlinePmtilesById}
               onSaveOfflinePmtiles={async (r, onProgress) => {
-                const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
-                if (meta?.format !== 'pmtiles' || typeof meta?.pmtiles_url !== 'string') {
-                  throw new Error('Raster-ul nu are pmtiles_url');
+                const url = rasterPmtilesHttpUrl(r);
+                if (!url) {
+                  throw new Error('Raster PMTiles fără URL (lipsește storage_path sau format invalid).');
                 }
                 await saveRemoteRasterArchive({
                   rasterId: r.id,
                   name: r.name,
-                  url: meta.pmtiles_url,
+                  url,
                   onProgress,
                 });
                 setOfflinePmtilesById(await buildRasterUrlOverrides());
@@ -1042,10 +1039,8 @@ export default function FieldPage() {
                 setOfflinePmtilesById(await buildRasterUrlOverrides());
               }}
               onZoomTo={async (r) => {
-                const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
-                const pmUrl = typeof meta?.pmtiles_url === 'string' ? meta.pmtiles_url : null;
-                const isPMTiles = meta?.format === 'pmtiles' && Boolean(pmUrl);
-                if (isPMTiles && pmUrl) {
+                const pmUrl = rasterPmtilesHttpUrl(r);
+                if (pmUrl) {
                   try {
                     const arch = new PMTiles(pmUrl);
                     const h = await arch.getHeader();
