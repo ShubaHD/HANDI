@@ -39,12 +39,27 @@ function symbolLabel(symbol: string): string {
   }
 }
 
+function styleProps(a: Annotation): Record<string, unknown> {
+  const s = a.style ?? {};
+  if (a.kind === 'arrow') {
+    return { arrow_color: typeof s.arrowColor === 'string' ? s.arrowColor : '#22c55e' };
+  }
+  if (a.kind === 'text') {
+    return {
+      text_size_px: typeof s.textSizePx === 'number' ? s.textSizePx : 14,
+      text_color: typeof s.textColor === 'string' ? s.textColor : '#f1f5f9',
+    };
+  }
+  return {};
+}
+
 function annotationsToGeoJSON(
   annotations: Annotation[],
 ): GeoJSON.FeatureCollection<GeoJSON.Geometry> {
   const features: Array<GeoJSON.Feature<GeoJSON.Geometry>> = [];
 
   for (const a of annotations) {
+    const extra = styleProps(a);
     features.push({
       type: 'Feature',
       geometry: a.geom,
@@ -56,6 +71,7 @@ function annotationsToGeoJSON(
         visibility: a.visibility,
         bearing_deg: a.bearing_deg,
         symbol_label: a.symbol ? symbolLabel(a.symbol) : '',
+        ...extra,
       },
     });
 
@@ -65,6 +81,7 @@ function annotationsToGeoJSON(
         const p1 = coords[coords.length - 2];
         const p2 = coords[coords.length - 1];
         const bearing = a.bearing_deg ?? computeBearingDeg(p1[0], p1[1], p2[0], p2[1]);
+        const ac = (extra as { arrow_color?: string }).arrow_color ?? '#22c55e';
         features.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: p2 },
@@ -73,6 +90,7 @@ function annotationsToGeoJSON(
             kind: 'arrowhead',
             visibility: a.visibility,
             bearing_deg: bearing,
+            arrow_color: ac,
           },
         });
       }
@@ -106,7 +124,7 @@ export function addAnnotationsLayer(map: MlMap) {
     source: SOURCE_ID,
     filter: ['==', ['get', 'kind'], 'arrow'] as never,
     paint: {
-      'line-color': '#22c55e',
+      'line-color': ['coalesce', ['get', 'arrow_color'], '#22c55e'] as never,
       'line-width': 3,
       'line-opacity': 0.9,
     },
@@ -125,7 +143,7 @@ export function addAnnotationsLayer(map: MlMap) {
       'text-rotation-alignment': 'map',
     },
     paint: {
-      'text-color': '#22c55e',
+      'text-color': ['coalesce', ['get', 'arrow_color'], '#22c55e'] as never,
       'text-halo-color': '#0f172a',
       'text-halo-width': 1.2,
     },
@@ -166,15 +184,20 @@ export function addAnnotationsLayer(map: MlMap) {
     layout: {
       'text-field': ['get', 'text'],
       'text-font': ANNOT_TEXT_FONT as never,
-      'text-size': 12,
+      'text-size': [
+        'case',
+        ['has', 'text_size_px'],
+        ['max', 8, ['min', 44, ['to-number', ['get', 'text_size_px']]]],
+        14,
+      ] as never,
       'text-offset': [0, 0.9],
       'text-anchor': 'top',
       'text-allow-overlap': false,
       'text-optional': true,
     },
     paint: {
-      'text-color': '#0f172a',
-      'text-halo-color': '#fff',
+      'text-color': ['coalesce', ['get', 'text_color'], '#f1f5f9'] as never,
+      'text-halo-color': '#0f172a',
       'text-halo-width': 1.5,
     },
   });
@@ -185,4 +208,3 @@ export function updateAnnotationsLayer(map: MlMap, annotations: Annotation[]) {
   if (!src) return;
   src.setData(annotationsToGeoJSON(annotations));
 }
-

@@ -755,7 +755,9 @@ export function MapView({
   if (useLeaflet) {
     return (
       <div className="relative h-full w-full min-h-0">
-        <div className="absolute inset-0 z-0">
+        <div
+          className={`absolute inset-0 z-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}`}
+        >
           <LeafletView
             base={base}
             points={points}
@@ -816,7 +818,10 @@ export function MapView({
 
   return (
     <div className="relative h-full w-full min-h-0">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div
+        ref={containerRef}
+        className={`absolute inset-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}`}
+      />
       {hover && <MapHoverTooltip x={hover.x} y={hover.y} data={hover.data} />}
 
       {mapDebug && (

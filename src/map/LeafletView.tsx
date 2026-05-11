@@ -388,11 +388,34 @@ export function LeafletView({
         const [lon, lat] = a.geom.coordinates;
         const latlng = L.latLng(lat, lon);
         if (a.kind === 'text') {
-          const html = `<div style="font-weight:600">${escapeHtml(a.text ?? '')}</div>`;
-          const marker = L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
-          marker.on('mouseover', () => scheduleHover(latlng, html, 11));
-          marker.on('mouseout', () => clearHover());
-          group.addLayer(marker);
+          const st = a.style ?? {};
+          const fs = typeof st.textSizePx === 'number' ? st.textSizePx : 14;
+          const c = st.textColor ?? '#f1f5f9';
+          const col = /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '#f1f5f9';
+          const raw = (a.text ?? '').trim();
+          if (!raw) continue;
+          const m = L.circleMarker(latlng, {
+            radius: 12,
+            opacity: 0,
+            fillOpacity: 0.01,
+            weight: 0,
+            interactive: true,
+          });
+          const tip = document.createElement('div');
+          tip.style.cssText = `font-size:${fs}px;line-height:1.25;font-weight:600;color:${col};text-shadow:0 0 2px #0f172a,0 0 8px #0f172a;max-width:280px;white-space:pre-wrap;word-break:break-word`;
+          tip.textContent = raw;
+          m.bindTooltip(tip, {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -4],
+            opacity: 1,
+            className: 'handi-annot-text-leaflet',
+          });
+          m.on('mouseover', () =>
+            scheduleHover(latlng, `<div style="font-weight:600">${escapeHtml(raw)}</div>`, 10),
+          );
+          m.on('mouseout', () => clearHover());
+          group.addLayer(m);
           continue;
         }
 
@@ -416,7 +439,8 @@ export function LeafletView({
         const coords = a.geom.coordinates;
         if (coords.length < 2) continue;
         const latlngs = coords.map((c) => L.latLng(c[1], c[0]));
-        const line = L.polyline(latlngs, { color: '#22c55e', weight: 3, opacity: 0.9 });
+        const arrowColor = a.style?.arrowColor ?? '#22c55e';
+        const line = L.polyline(latlngs, { color: arrowColor, weight: 3, opacity: 0.9 });
         line.on('mouseover', (e) =>
           scheduleHover(e.latlng, `<div style="font-weight:600">Săgeată</div>`, 0),
         );
@@ -428,7 +452,7 @@ export function LeafletView({
         const bearing = a.bearing_deg ?? computeBearingDeg(p1[0], p1[1], p2[0], p2[1]);
         const headIcon = L.divIcon({
           className: 'handi-arrow-head',
-          html: `<div style="transform: rotate(${bearing}deg); font-size:16px; line-height:16px">➤</div>`,
+          html: `<div style="transform: rotate(${bearing}deg); font-size:16px; line-height:16px;color:${escapeHtml(arrowColor)}">➤</div>`,
           iconSize: [16, 16],
           iconAnchor: [8, 8],
         });

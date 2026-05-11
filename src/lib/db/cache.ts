@@ -1,4 +1,4 @@
-import type { Annotation, PointOfInterest, Track, Zone } from '@/lib/types';
+import type { Annotation, AnnotationStyle, PointOfInterest, Track, Zone } from '@/lib/types';
 import { db } from './dexie';
 import { fetchPoints as fetchPointsRemote } from '@/features/points/api';
 import { fetchZones as fetchZonesRemote } from '@/features/zones/api';
@@ -28,8 +28,17 @@ async function safeFetch<T>(
     return { data: fresh, fromCache: false };
   } catch (e) {
     const cached = (await (db[table] as unknown as { toArray: () => Promise<unknown[]> }).toArray()) as T[];
+    let data = cached;
+    if (table === 'annotations') {
+      data = (cached as unknown as Annotation[]).map((a) => {
+        const s = (a as { style?: unknown }).style;
+        const style: AnnotationStyle =
+          s && typeof s === 'object' && !Array.isArray(s) ? (s as AnnotationStyle) : {};
+        return { ...(a as object), style } as Annotation;
+      }) as T[];
+    }
     return {
-      data: cached,
+      data,
       fromCache: true,
       error: e instanceof Error ? e.message : 'Eroare',
     };

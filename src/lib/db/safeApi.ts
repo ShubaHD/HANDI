@@ -8,6 +8,8 @@ import { createTrack as remoteCreateTrack, deleteTrack as remoteDeleteTrack } fr
 import {
   createAnnotation as remoteCreateAnnotation,
   deleteAnnotation as remoteDeleteAnnotation,
+  updateAnnotation as remoteUpdateAnnotation,
+  type AnnotationUpdatePatch,
   type NewAnnotationInput,
 } from '@/features/annotations/api';
 import type { NewPointInput } from '@/features/points/api';
@@ -145,6 +147,22 @@ export async function safeDeleteAnnotation(id: string): Promise<SafeResult<void>
   } catch (e) {
     if (isNetworkError(e)) {
       await enqueue('deleteAnnotation', { id });
+      return { ok: 'queued' };
+    }
+    throw e;
+  }
+}
+
+export async function safeUpdateAnnotation(
+  id: string,
+  patch: AnnotationUpdatePatch,
+): Promise<SafeResult<Annotation>> {
+  try {
+    const data = await remoteUpdateAnnotation(id, patch);
+    return { ok: 'remote', data };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      await enqueue('updateAnnotation', { id, patch });
       return { ok: 'queued' };
     }
     throw e;

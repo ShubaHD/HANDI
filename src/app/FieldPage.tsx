@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PMTiles } from 'pmtiles';
 import { MapView } from '@/map/MapView';
 import { PointForm } from '@/features/points/PointForm';
@@ -48,7 +48,13 @@ import {
 } from '@/lib/pmtiles';
 import { type AppDiagnostics, checkPmtilesUrl } from '@/lib/diagnostics';
 import type { Annotation, AnnotationSymbol, Visibility } from '@/lib/types';
-import { safeCreateAnnotation } from '@/lib/db/safeApi';
+import { safeCreateAnnotation, safeDeleteAnnotation, safeUpdateAnnotation } from '@/lib/db/safeApi';
+
+function annotPreviewLabel(a: Annotation): string {
+  if (a.kind === 'text') return (a.text ?? '').trim().slice(0, 36) || 'Text';
+  if (a.kind === 'arrow') return 'Săgeată';
+  return `Simbol ${a.symbol ?? ''}`;
+}
 
 interface PendingPoint {
   lat: number;
@@ -86,8 +92,22 @@ export default function FieldPage() {
   const [annotVisibility, setAnnotVisibility] = useState<Visibility>('club');
   const [annotSymbol, setAnnotSymbol] = useState<AnnotationSymbol>('dolina');
   const [annotText, setAnnotText] = useState('');
+  const [annotArrowColor, setAnnotArrowColor] = useState('#22c55e');
+  const [annotTextSizePx, setAnnotTextSizePx] = useState(16);
+  const [annotTextColor, setAnnotTextColor] = useState('#fef08a');
   const [arrowStart, setArrowStart] = useState<{ lon: number; lat: number } | null>(null);
   const [annotOpen, setAnnotOpen] = useState(false);
+  const [annotEdit, setAnnotEdit] = useState<{ id: string; kind: 'text' | 'arrow' | 'symbol' } | null>(null);
+  const [annotEditText, setAnnotEditText] = useState('');
+  const [annotEditSizePx, setAnnotEditSizePx] = useState(16);
+  const [annotEditColor, setAnnotEditColor] = useState('#fef08a');
+  const [annotEditArrowColor, setAnnotEditArrowColor] = useState('#22c55e');
+  const [annotEditSymbol, setAnnotEditSymbol] = useState<AnnotationSymbol>('dolina');
+
+  const myRecentAnnotations = useMemo(
+    () => (!user?.id ? [] : annotations.filter((a) => a.owner_id === user.id).slice(0, 40)),
+    [annotations, user?.id],
+  );
 
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
 
@@ -229,6 +249,70 @@ export default function FieldPage() {
     [cadLabelEdit, cadLayers, reload],
   );
 
+  const removeAnnot = async (id: string) => {
+    if (!confirm('Stergi aceasta adnotare?')) return;
+    try {
+      const r = await safeDeleteAnnotation(id);
+      if (r.ok === 'queued') alert('Sters local. Va sincroniza automat.');
+      if (annotEdit?.id === id) setAnnotEdit(null);
+      void reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Eroare la stergere');
+    }
+  };
+
+  const saveTextAnnotEdit = async () => {
+    if (!annotEdit || annotEdit.kind !== 'text') return;
+    const ann = annotations.find((x) => x.id === annotEdit.id);
+    if (!ann || ann.kind !== 'text') return;
+    const t = annotEditText.trim();
+    if (!t) {
+      alert('Introdu textul.');
+      return;
+    }
+    try {
+      const r = await safeUpdateAnnotation(annotEdit.id, {
+        text: t,
+        style: { ...ann.style, textSizePx: annotEditSizePx, textColor: annotEditColor },
+      });
+      if (r.ok === 'queued') alert('Salvat local. Va sincroniza automat.');
+      setAnnotEdit(null);
+      void reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Eroare la salvare');
+    }
+  };
+
+  const saveArrowColorEdit = async () => {
+    if (!annotEdit || annotEdit.kind !== 'arrow') return;
+    const ann = annotations.find((x) => x.id === annotEdit.id);
+    if (!ann || ann.kind !== 'arrow') return;
+    try {
+      const r = await safeUpdateAnnotation(annotEdit.id, {
+        style: { ...ann.style, arrowColor: annotEditArrowColor },
+      });
+      if (r.ok === 'queued') alert('Salvat local. Va sincroniza automat.');
+      setAnnotEdit(null);
+      void reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Eroare la salvare');
+    }
+  };
+
+  const saveSymbolEdit = async () => {
+    if (!annotEdit || annotEdit.kind !== 'symbol') return;
+    const ann = annotations.find((x) => x.id === annotEdit.id);
+    if (!ann || ann.kind !== 'symbol') return;
+    try {
+      const r = await safeUpdateAnnotation(annotEdit.id, { symbol: annotEditSymbol });
+      if (r.ok === 'queued') alert('Salvat local. Va sincroniza automat.');
+      setAnnotEdit(null);
+      void reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Eroare la salvare');
+    }
+  };
+
   const onMapClick = (lng: number, lat: number) => {
     if (annotOpen && annotMode !== 'off') {
       void (async () => {
@@ -252,6 +336,7 @@ export default function FieldPage() {
               geom,
               bearing_deg,
               visibility: annotVisibility,
+              style: { arrowColor: annotArrowColor },
             });
             if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
             void reload();
@@ -270,6 +355,7 @@ export default function FieldPage() {
               lat,
               lon: lng,
               visibility: annotVisibility,
+              style: { textSizePx: annotTextSizePx, textColor: annotTextColor },
             });
             if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
             void reload();
@@ -282,6 +368,7 @@ export default function FieldPage() {
             lat,
             lon: lng,
             visibility: annotVisibility,
+            style: {},
           });
           if (r.ok === 'queued') alert('Adnotare pusa in coada offline.');
           void reload();
@@ -660,6 +747,7 @@ export default function FieldPage() {
                   if (!next) {
                     setAnnotMode('off');
                     setArrowStart(null);
+                    setAnnotEdit(null);
                   } else {
                     if (annotMode === 'off') setAnnotMode('symbol');
                   }
@@ -731,17 +819,237 @@ export default function FieldPage() {
                 )}
 
                 {annotMode === 'text' && (
-                  <input
-                    value={annotText}
-                    onChange={(e) => setAnnotText(e.target.value)}
-                    placeholder="Text (ex: Nume deal, rau...)"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm"
-                  />
+                  <div className="space-y-2">
+                    <textarea
+                      value={annotText}
+                      onChange={(e) => setAnnotText(e.target.value)}
+                      placeholder="Text (ex: Nume deal, râu…)"
+                      rows={3}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm resize-none"
+                    />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-[10px] text-slate-500 flex items-center gap-1">
+                        Mărime
+                        <input
+                          type="range"
+                          min={10}
+                          max={36}
+                          value={annotTextSizePx}
+                          onChange={(e) => setAnnotTextSizePx(Number(e.target.value))}
+                          className="w-24"
+                        />
+                        <span className="text-slate-400 tabular-nums">{annotTextSizePx}px</span>
+                      </label>
+                      <label className="text-[10px] text-slate-500 flex items-center gap-1">
+                        Culoare
+                        <input
+                          type="color"
+                          value={annotTextColor}
+                          onChange={(e) => setAnnotTextColor(e.target.value)}
+                          className="h-7 w-10 rounded border border-slate-600 bg-slate-900 cursor-pointer"
+                        />
+                      </label>
+                    </div>
+                  </div>
                 )}
 
                 {annotMode === 'arrow' && (
-                  <div className="text-xs text-slate-400">
-                    Click pe hartă pentru start, apoi click pentru capăt.
+                  <div className="space-y-2">
+                    <div className="text-xs text-slate-400">
+                      Click pe hartă pentru start, apoi click pentru capăt.
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-slate-400">
+                      Culoare săgeată
+                      <input
+                        type="color"
+                        value={annotArrowColor}
+                        onChange={(e) => setAnnotArrowColor(e.target.value)}
+                        className="h-7 w-10 rounded border border-slate-600 bg-slate-900 cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {annotEdit && (
+                  <div className="mt-3 pt-2 border-t border-slate-700 space-y-2">
+                    {annotEdit.kind === 'text' && (
+                      <>
+                        <div className="text-xs font-medium text-slate-300">Editează text pe hartă</div>
+                        <textarea
+                          value={annotEditText}
+                          onChange={(e) => setAnnotEditText(e.target.value)}
+                          rows={3}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm resize-none"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="text-[10px] text-slate-500 flex items-center gap-1">
+                            Mărime
+                            <input
+                              type="range"
+                              min={10}
+                              max={36}
+                              value={annotEditSizePx}
+                              onChange={(e) => setAnnotEditSizePx(Number(e.target.value))}
+                              className="w-20"
+                            />
+                            <span className="text-slate-400">{annotEditSizePx}px</span>
+                          </label>
+                          <input
+                            type="color"
+                            value={annotEditColor}
+                            onChange={(e) => setAnnotEditColor(e.target.value)}
+                            className="h-7 w-10 rounded border border-slate-600"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAnnotEdit(null)}
+                            className="flex-1 py-1.5 rounded-lg border border-slate-600 text-xs text-slate-300"
+                          >
+                            Anulează
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void saveTextAnnotEdit()}
+                            className="flex-1 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium"
+                          >
+                            Salvează textul
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    {annotEdit.kind === 'arrow' && (
+                      <>
+                        <div className="text-xs font-medium text-slate-300">Culoare săgeată</div>
+                        <label className="flex items-center gap-2 text-xs text-slate-400">
+                          Alege culoarea
+                          <input
+                            type="color"
+                            value={annotEditArrowColor}
+                            onChange={(e) => setAnnotEditArrowColor(e.target.value)}
+                            className="h-8 w-12 rounded border border-slate-600 bg-slate-900 cursor-pointer"
+                          />
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAnnotEdit(null)}
+                            className="flex-1 py-1.5 rounded-lg border border-slate-600 text-xs text-slate-300"
+                          >
+                            Anulează
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void saveArrowColorEdit()}
+                            className="flex-1 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium"
+                          >
+                            Salvează culoarea
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    {annotEdit.kind === 'symbol' && (
+                      <>
+                        <div className="text-xs font-medium text-slate-300">Schimbă simbolul</div>
+                        <select
+                          value={annotEditSymbol}
+                          onChange={(e) => setAnnotEditSymbol(e.target.value as AnnotationSymbol)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm"
+                        >
+                          <option value="diaclaza">Diaclaza</option>
+                          <option value="dolina">Dolina</option>
+                          <option value="abrupt">Abrupt</option>
+                          <option value="pestera">Pestera</option>
+                          <option value="intrebare">Semn întrebări</option>
+                          <option value="mirare">Semn mirări</option>
+                          <option value="ravene">Ravene</option>
+                          <option value="ponoare">Ponoare</option>
+                          <option value="izbuc">Izbucuri</option>
+                          <option value="depresiune_hachuri">Depresiune (hașuri)</option>
+                          <option value="alunecare">Alunecare teren</option>
+                        </select>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAnnotEdit(null)}
+                            className="flex-1 py-1.5 rounded-lg border border-slate-600 text-xs text-slate-300"
+                          >
+                            Anulează
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void saveSymbolEdit()}
+                            className="flex-1 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium"
+                          >
+                            Salvează simbolul
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {user?.id && myRecentAnnotations.length > 0 && (
+                  <div className="mt-3 pt-2 border-t border-slate-700 max-h-36 overflow-y-auto">
+                    <div className="text-xs text-slate-500 mb-1">Adnotările mele (recent)</div>
+                    <ul className="space-y-1">
+                      {myRecentAnnotations.map((a) => (
+                        <li
+                          key={a.id}
+                          className="flex items-start gap-1 text-[11px] text-slate-300 leading-tight"
+                        >
+                          <span className="truncate flex-1" title={annotPreviewLabel(a)}>
+                            {annotPreviewLabel(a)}
+                          </span>
+                          {a.kind === 'text' && (
+                            <button
+                              type="button"
+                              className="shrink-0 text-brand-400 hover:underline"
+                              onClick={() => {
+                                setAnnotEdit({ id: a.id, kind: 'text' });
+                                setAnnotEditText(a.text ?? '');
+                                setAnnotEditSizePx(a.style?.textSizePx ?? 16);
+                                setAnnotEditColor(a.style?.textColor ?? '#fef08a');
+                              }}
+                            >
+                              Editează
+                            </button>
+                          )}
+                          {a.kind === 'arrow' && (
+                            <button
+                              type="button"
+                              className="shrink-0 text-brand-400 hover:underline"
+                              onClick={() => {
+                                setAnnotEdit({ id: a.id, kind: 'arrow' });
+                                setAnnotEditArrowColor(a.style?.arrowColor ?? '#22c55e');
+                              }}
+                            >
+                              Culoare
+                            </button>
+                          )}
+                          {a.kind === 'symbol' && (
+                            <button
+                              type="button"
+                              className="shrink-0 text-brand-400 hover:underline"
+                              onClick={() => {
+                                setAnnotEdit({ id: a.id, kind: 'symbol' });
+                                setAnnotEditSymbol(a.symbol ?? 'dolina');
+                              }}
+                            >
+                              Simbol
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="shrink-0 text-red-400 hover:underline"
+                            onClick={() => void removeAnnot(a.id)}
+                          >
+                            Șterge
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>

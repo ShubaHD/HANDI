@@ -1,5 +1,11 @@
 import { supabase } from '@/lib/supabase';
-import type { Annotation, AnnotationKind, AnnotationSymbol, Visibility } from '@/lib/types';
+import type {
+  Annotation,
+  AnnotationKind,
+  AnnotationStyle,
+  AnnotationSymbol,
+  Visibility,
+} from '@/lib/types';
 
 export type NewAnnotationInput =
   | {
@@ -10,6 +16,7 @@ export type NewAnnotationInput =
       lon: number;
       bearing_deg?: number | null;
       visibility: Visibility;
+      style?: AnnotationStyle;
     }
   | {
       kind: 'text';
@@ -18,13 +25,22 @@ export type NewAnnotationInput =
       lon: number;
       bearing_deg?: number | null;
       visibility: Visibility;
+      style?: AnnotationStyle;
     }
   | {
       kind: 'arrow';
       geom: GeoJSON.LineString;
       bearing_deg?: number | null;
       visibility: Visibility;
+      style?: AnnotationStyle;
     };
+
+export type AnnotationUpdatePatch = {
+  text?: string | null;
+  visibility?: Visibility;
+  style?: AnnotationStyle;
+  symbol?: AnnotationSymbol | null;
+};
 
 interface AnnotationRow {
   id: string;
@@ -37,12 +53,29 @@ interface AnnotationRow {
   geom_json: GeoJSON.Geometry;
   bearing_deg: number | null;
   visibility: Visibility;
+  style: unknown;
   created_at: string;
   updated_at: string;
 }
 
 const SELECT_COLS =
-  'id, owner_id, kind, symbol, text, lat, lon, geom_json, bearing_deg, visibility, created_at, updated_at';
+  'id, owner_id, kind, symbol, text, lat, lon, geom_json, bearing_deg, visibility, style, created_at, updated_at';
+
+function parseStyle(raw: unknown): AnnotationStyle {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const o = raw as Record<string, unknown>;
+  const out: AnnotationStyle = {};
+  if (typeof o.arrowColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(o.arrowColor)) {
+    out.arrowColor = o.arrowColor;
+  }
+  if (typeof o.textColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(o.textColor)) {
+    out.textColor = o.textColor;
+  }
+  if (typeof o.textSizePx === 'number' && Number.isFinite(o.textSizePx)) {
+    out.textSizePx = Math.max(8, Math.min(48, Math.round(o.textSizePx)));
+  }
+  return out;
+}
 
 function rowToAnnotation(r: AnnotationRow): Annotation {
   return {
@@ -56,6 +89,7 @@ function rowToAnnotation(r: AnnotationRow): Annotation {
     geom: r.geom_json,
     bearing_deg: r.bearing_deg ?? null,
     visibility: r.visibility,
+    style: parseStyle(r.style),
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
@@ -75,11 +109,14 @@ export async function createAnnotation(input: NewAnnotationInput): Promise<Annot
   const userId = u.user?.id;
   if (!userId) throw new Error('Trebuie sa fii autentificat');
 
+  const style = input.style && Object.keys(input.style).length > 0 ? input.style : {};
+
   const row: Record<string, unknown> = {
     owner_id: userId,
     kind: input.kind,
     visibility: input.visibility,
     bearing_deg: input.bearing_deg ?? null,
+    style,
   };
 
   if (input.kind === 'arrow') {
@@ -112,11 +149,14 @@ export async function deleteAnnotation(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function updateAnnotation(
-  id: string,
-  patch: Partial<Omit<NewAnnotationInput, 'kind'>> & { text?: string | null; visibility?: Visibility },
-): Promise<Annotation> {
-  const { data, error } = await supabase.from('annotations').update(patch).eq('id', id).select(SELECT_COLS).single();
+export async function updateAnnotation(id: string, patch: AnnotationUpdatePatch): Promise<Annotation> {
+  const updateRow: Record<string, unknown> = {};
+  if ('text' in patch) updateRow.text = patch.text;
+  if ('visibility' in patch) updateRow.visibility = patch.visibility;
+  if ('style' in patch && patch.style != null) updateRow.style = patch.style;
+  if ('symbol' in patch) updateRow.symbol = patch.symbol;
+
+  const { data, error } = await supabase.from('annotations').update(updateRow).eq('id', id).select(SELECT_COLS).single();
   if (error) throw error;
   return rowToAnnotation(data as unknown as AnnotationRow);
 }
@@ -125,4 +165,3 @@ function lineToWKT(line: GeoJSON.LineString): string {
   const coords = line.coordinates.map((c) => `${c[0]} ${c[1]}`).join(', ');
   return `LINESTRING(${coords})`;
 }
-

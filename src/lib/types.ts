@@ -85,6 +85,13 @@ export interface RasterOverlay {
 
 export type AnnotationKind = 'symbol' | 'text' | 'arrow';
 
+/** Opțional, persistat în `annotations.style` (JSON). */
+export type AnnotationStyle = {
+  arrowColor?: string;
+  textSizePx?: number;
+  textColor?: string;
+};
+
 export type AnnotationSymbol =
   | 'diaclaza'
   | 'dolina'
@@ -109,6 +116,7 @@ export interface Annotation {
   geom: GeoJSON.Geometry; // from generated geom_json
   bearing_deg: number | null;
   visibility: Visibility;
+  style: AnnotationStyle;
   created_at: string;
   updated_at: string;
 }
