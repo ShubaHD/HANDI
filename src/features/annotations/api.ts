@@ -12,6 +12,7 @@ export type NewAnnotationInput =
       kind: 'symbol';
       symbol: AnnotationSymbol;
       text?: string | null;
+      notes?: string | null;
       lat: number;
       lon: number;
       bearing_deg?: number | null;
@@ -21,6 +22,7 @@ export type NewAnnotationInput =
   | {
       kind: 'text';
       text: string;
+      notes?: string | null;
       lat: number;
       lon: number;
       bearing_deg?: number | null;
@@ -30,6 +32,7 @@ export type NewAnnotationInput =
   | {
       kind: 'arrow';
       geom: GeoJSON.LineString;
+      notes?: string | null;
       bearing_deg?: number | null;
       visibility: Visibility;
       style?: AnnotationStyle;
@@ -37,6 +40,7 @@ export type NewAnnotationInput =
 
 export type AnnotationUpdatePatch = {
   text?: string | null;
+  notes?: string | null;
   visibility?: Visibility;
   style?: AnnotationStyle;
   symbol?: AnnotationSymbol | null;
@@ -48,6 +52,7 @@ interface AnnotationRow {
   kind: AnnotationKind;
   symbol: string | null;
   text: string | null;
+  notes: string | null;
   lat: number | null;
   lon: number | null;
   geom_json: GeoJSON.Geometry;
@@ -59,7 +64,7 @@ interface AnnotationRow {
 }
 
 const SELECT_COLS =
-  'id, owner_id, kind, symbol, text, lat, lon, geom_json, bearing_deg, visibility, style, created_at, updated_at';
+  'id, owner_id, kind, symbol, text, notes, lat, lon, geom_json, bearing_deg, visibility, style, created_at, updated_at';
 
 function parseStyle(raw: unknown): AnnotationStyle {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -84,6 +89,7 @@ function rowToAnnotation(r: AnnotationRow): Annotation {
     kind: r.kind,
     symbol: (r.symbol as AnnotationSymbol | null) ?? null,
     text: r.text ?? null,
+    notes: r.notes ?? null,
     lat: r.lat ?? null,
     lon: r.lon ?? null,
     geom: r.geom_json,
@@ -111,12 +117,14 @@ export async function createAnnotation(input: NewAnnotationInput): Promise<Annot
 
   const style = input.style && Object.keys(input.style).length > 0 ? input.style : {};
 
+  const notesTrim = typeof input.notes === 'string' ? input.notes.trim() : '';
   const row: Record<string, unknown> = {
     owner_id: userId,
     kind: input.kind,
     visibility: input.visibility,
     bearing_deg: input.bearing_deg ?? null,
     style,
+    notes: notesTrim ? notesTrim : null,
   };
 
   if (input.kind === 'arrow') {
@@ -145,13 +153,19 @@ export async function createAnnotation(input: NewAnnotationInput): Promise<Annot
 }
 
 export async function deleteAnnotation(id: string): Promise<void> {
-  const { error } = await supabase.from('annotations').delete().eq('id', id);
+  const { data, error } = await supabase.from('annotations').delete().eq('id', id).select('id').maybeSingle();
   if (error) throw error;
+  if (!data) {
+    throw new Error(
+      'Stergerea nu s-a aplicat (niciun rand). Cel mai frecvent: nu esti proprietarul adnotarii sau politica RLS „delete” pe Supabase.',
+    );
+  }
 }
 
 export async function updateAnnotation(id: string, patch: AnnotationUpdatePatch): Promise<Annotation> {
   const updateRow: Record<string, unknown> = {};
   if ('text' in patch) updateRow.text = patch.text;
+  if ('notes' in patch) updateRow.notes = patch.notes === '' || patch.notes == null ? null : patch.notes;
   if ('visibility' in patch) updateRow.visibility = patch.visibility;
   if ('style' in patch && patch.style != null) updateRow.style = patch.style;
   if ('symbol' in patch) updateRow.symbol = patch.symbol;

@@ -33,6 +33,8 @@ export interface PointOfInterest {
   owner_id: string;
   name: string;
   type: PointType;
+  /** Culoare cerc pe hartă (#rrggbb); null = paleta implicită după `type`. */
+  marker_color: string | null;
   lat: number;
   lon: number;
   elevation_m: number | null;
@@ -111,6 +113,8 @@ export interface Annotation {
   kind: AnnotationKind;
   symbol: AnnotationSymbol | null;
   text: string | null;
+  /** Observații / notițe (coloană `notes` în DB). */
+  notes: string | null;
   lat: number | null;
   lon: number | null;
   geom: GeoJSON.Geometry; // from generated geom_json

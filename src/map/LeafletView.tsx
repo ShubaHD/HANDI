@@ -3,6 +3,7 @@ import L from 'leaflet';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import { pointDisplayColorFromProps } from '@/features/points/pointStyle';
 import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
@@ -68,7 +69,7 @@ function toPointFC(points: PointOfInterest[]): GeoJSON.FeatureCollection {
     type: 'FeatureCollection',
     features: points.map((p) => ({
       type: 'Feature',
-      properties: { id: p.id, type: p.type, name: p.name ?? '' },
+      properties: { id: p.id, type: p.type, name: p.name ?? '', marker_color: p.marker_color ?? null },
       geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
     })),
   };
@@ -275,7 +276,7 @@ export function LeafletView({
         if (type === 'label') {
           return L.circleMarker(latlng, { radius: 0, opacity: 0, fillOpacity: 0 });
         }
-        const color = POINT_TYPES.find((t) => t.value === type)?.color ?? '#22c55e';
+        const color = pointDisplayColorFromProps(f.properties as { type?: string; marker_color?: string | null });
         return L.circleMarker(latlng, {
           radius: 6,
           color,

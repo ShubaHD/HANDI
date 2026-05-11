@@ -5,6 +5,7 @@ export interface PendingMutation {
   id?: number;
   kind:
     | 'createPoint'
+    | 'updatePoint'
     | 'deletePoint'
     | 'createZone'
     | 'updateZoneStatus'

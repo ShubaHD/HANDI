@@ -1,5 +1,6 @@
 import type { Map as MlMap, GeoJSONSource } from 'maplibre-gl';
-import { POINT_TYPES, type PointOfInterest } from '@/lib/types';
+import { pointDisplayColor } from '@/features/points/pointStyle';
+import type { PointOfInterest } from '@/lib/types';
 
 const SOURCE_ID = 'poi-source';
 const LAYER_CIRCLES = 'poi-circles';
@@ -19,6 +20,7 @@ function pointsToGeoJSON(points: PointOfInterest[]): GeoJSON.FeatureCollection<G
         name: p.name,
         type: p.type,
         visibility: p.visibility,
+        displayColor: pointDisplayColor(p),
       },
     })),
   };
@@ -32,12 +34,6 @@ export function addPointsLayer(map: MlMap) {
     data: { type: 'FeatureCollection', features: [] },
   });
 
-  const colorMatch: (string | string[])[] = ['match', ['get', 'type']];
-  for (const t of POINT_TYPES) {
-    colorMatch.push(t.value, t.color);
-  }
-  colorMatch.push('#94a3b8');
-
   map.addLayer({
     id: LAYER_CIRCLES,
     type: 'circle',
@@ -45,7 +41,7 @@ export function addPointsLayer(map: MlMap) {
     filter: ['!=', ['get', 'type'], 'label'] as never,
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4, 14, 8, 18, 12],
-      'circle-color': colorMatch as never,
+      'circle-color': ['get', 'displayColor'] as never,
       'circle-stroke-width': 2,
       'circle-stroke-color': '#fff',
       'circle-opacity': ['case', ['==', ['get', 'visibility'], 'private'], 0.7, 1],

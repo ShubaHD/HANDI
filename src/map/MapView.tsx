@@ -783,7 +783,7 @@ export function MapView({
 
         {betweenMapAndControls}
 
-        <div className="pointer-events-auto fixed left-3 top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[500] flex flex-col gap-2 md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
+        <div className="pointer-events-auto fixed left-3 top-[calc(env(safe-area-inset-top,0px)+3.75rem)] z-[500] flex flex-col gap-2 md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
           <button
             onClick={() => setShowSwitcher((v) => !v)}
             className="bg-slate-950/95 backdrop-blur border border-slate-600 rounded-xl shadow-2xl px-3 py-2 text-sm font-semibold hover:bg-slate-800"
@@ -851,7 +851,7 @@ export function MapView({
         </div>
       )}
 
-      <div className="pointer-events-auto fixed left-3 top-[max(0.75rem,env(safe-area-inset-top,0px))] z-[500] flex flex-col gap-2 md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
+      <div className="pointer-events-auto fixed left-3 top-[calc(env(safe-area-inset-top,0px)+3.75rem)] z-[500] flex flex-col gap-2 md:left-[calc(20rem+0.75rem)] lg:left-[calc(24rem+0.75rem)]">
         <button
           onClick={() => setShowSwitcher((v) => !v)}
           className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-xl shadow-xl px-3 py-2 text-sm font-medium hover:bg-slate-800"

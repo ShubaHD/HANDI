@@ -1,4 +1,8 @@
-import { createPoint as remoteCreatePoint, deletePoint as remoteDeletePoint } from '@/features/points/api';
+import {
+  createPoint as remoteCreatePoint,
+  deletePoint as remoteDeletePoint,
+  updatePoint as remoteUpdatePoint,
+} from '@/features/points/api';
 import {
   createZone as remoteCreateZone,
   deleteZone as remoteDeleteZone,
@@ -16,6 +20,7 @@ import type { NewPointInput } from '@/features/points/api';
 import type { NewZoneInput } from '@/features/zones/api';
 import type { NewTrackInput } from '@/features/tracks/api';
 import type { Annotation, PointOfInterest, Track, Zone } from '@/lib/types';
+import { db } from './dexie';
 import { enqueue } from './syncQueue';
 
 function isNetworkError(e: unknown): boolean {
@@ -47,10 +52,31 @@ export async function safeCreatePoint(
 export async function safeDeletePoint(id: string): Promise<SafeResult<void>> {
   try {
     await remoteDeletePoint(id);
+    try {
+      await db.points.delete(id);
+    } catch {
+      /* cache local opțional */
+    }
     return { ok: 'remote', data: undefined };
   } catch (e) {
     if (isNetworkError(e)) {
       await enqueue('deletePoint', { id });
+      return { ok: 'queued' };
+    }
+    throw e;
+  }
+}
+
+export async function safeUpdatePoint(
+  id: string,
+  patch: Partial<NewPointInput>,
+): Promise<SafeResult<PointOfInterest>> {
+  try {
+    const data = await remoteUpdatePoint(id, patch);
+    return { ok: 'remote', data };
+  } catch (e) {
+    if (isNetworkError(e)) {
+      await enqueue('updatePoint', { id, patch });
       return { ok: 'queued' };
     }
     throw e;

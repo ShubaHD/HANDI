@@ -1,5 +1,5 @@
 import { db, type PendingMutation } from './dexie';
-import { createPoint, deletePoint, type NewPointInput } from '@/features/points/api';
+import { createPoint, deletePoint, updatePoint, type NewPointInput } from '@/features/points/api';
 import {
   createZone,
   deleteZone,
@@ -67,6 +67,11 @@ async function applyMutation(m: PendingMutation): Promise<void> {
     case 'createPoint':
       await createPoint(m.payload as PointPayload);
       return;
+    case 'updatePoint': {
+      const p = m.payload as { id: string; patch: Partial<NewPointInput> };
+      await updatePoint(p.id, p.patch);
+      return;
+    }
     case 'deletePoint':
       await deletePoint((m.payload as { id: string }).id);
       return;

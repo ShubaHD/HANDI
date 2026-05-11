@@ -1,19 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { pointDisplayColor } from '@/features/points/pointStyle';
 import { POINT_TYPES, type PointOfInterest, type PointType } from '@/lib/types';
 import { safeDeletePoint } from '@/lib/db/safeApi';
+import { downloadPointsCsv, pointsToCsv } from '@/features/points/pointsCsv';
 
 interface Props {
   points: PointOfInterest[];
   onAddPoint: () => void;
   onSelect: (p: PointOfInterest) => void;
   onChanged: () => void;
+  /** Deschide formularul de editare în tabul Puncte (ex. modal din FieldPage). */
+  onEditPoint?: (p: PointOfInterest) => void;
 }
 
-export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
+export function PointsList({ points, onAddPoint, onSelect, onChanged, onEditPoint }: Props) {
   const [filter, setFilter] = useState<PointType | 'all'>('all');
   const [query, setQuery] = useState('');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const filtered = useMemo(() => {
     return points
@@ -23,11 +28,42 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
       );
   }, [points, filter, query]);
 
+  const toggleId = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }, []);
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedIds(new Set(filtered.map((p) => p.id)));
+  }, [filtered]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const exportSelectedCsv = useCallback(() => {
+    const rows = filtered.filter((p) => selectedIds.has(p.id));
+    if (rows.length === 0) {
+      alert('Bifează cel puțin un punct din listă, apoi „Export CSV”.');
+      return;
+    }
+    downloadPointsCsv(`puncte-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`, pointsToCsv(rows));
+  }, [filtered, selectedIds]);
+
   const remove = async (id: string) => {
     if (!confirm('Stergi acest punct?')) return;
     try {
       const r = await safeDeletePoint(id);
       if (r.ok === 'queued') alert('Stergere pusa in coada offline.');
+      setSelectedIds((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
       onChanged();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Eroare la stergere');
@@ -51,6 +87,7 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
         await safeDeletePoint(toDelete[i].id);
         setBulkProgress({ done: i + 1, total: toDelete.length });
       }
+      clearSelection();
       onChanged();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Eroare la stergere in bulk');
@@ -62,26 +99,49 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-3 border-b border-slate-700 space-y-2">
+    <div className="flex h-full flex-col">
+      <div className="space-y-2 border-b border-slate-700 p-3">
         <button
           type="button"
           onClick={onAddPoint}
-          className="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium"
+          className="w-full rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700"
         >
           Adaugă punct
         </button>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={exportSelectedCsv}
+            className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-700/80"
+          >
+            Export CSV ({selectedIds.size})
+          </button>
+          <button
+            type="button"
+            onClick={selectAllFiltered}
+            className="rounded-lg border border-slate-600 px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-800"
+          >
+            Bifează afișate
+          </button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="rounded-lg border border-slate-600 px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-800"
+          >
+            Debifează
+          </button>
+        </div>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Cauta..."
-          className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:border-brand-500"
+          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
         />
         {filter !== 'all' && (
           <button
             onClick={() => void removeAllOfType(filter)}
             disabled={bulkDeleting}
-            className="w-full px-3 py-1.5 rounded-lg text-sm border transition bg-red-900/30 border-red-800 text-red-200 hover:bg-red-900/45 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-lg border border-red-800 bg-red-900/30 px-3 py-1.5 text-sm text-red-200 transition hover:bg-red-900/45 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {bulkDeleting && bulkProgress
               ? `Șterg… (${bulkProgress.done}/${bulkProgress.total})`
@@ -112,9 +172,9 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="p-6 text-center text-slate-500 text-sm">
+          <div className="p-6 text-center text-sm text-slate-500">
             {points.length === 0
               ? 'Niciun punct încă. Apasă „Adaugă punct” de mai sus (coordonate, tip, descriere, foto). Pe hartă poți folosi și + (GPS).'
               : 'Niciun rezultat pentru filtrul curent.'}
@@ -123,39 +183,70 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
           <ul className="divide-y divide-slate-700">
             {filtered.map((p) => {
               const meta = POINT_TYPES.find((t) => t.value === p.type);
+              const checked = selectedIds.has(p.id);
               return (
                 <li key={p.id} className="hover:bg-slate-800/60">
-                  <div className="flex items-start gap-3 p-3">
+                  <div className="flex items-start gap-2 p-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleId(p.id)}
+                      className="mt-2 shrink-0 rounded border-slate-600"
+                      aria-label={`Selectează ${p.name}`}
+                    />
                     <button
+                      type="button"
                       onClick={() => onSelect(p)}
-                      className="flex-1 text-left flex items-start gap-3"
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
                     >
                       <div
-                        className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                        style={{ backgroundColor: meta?.color ?? '#475569' }}
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white"
+                        style={{ backgroundColor: pointDisplayColor(p) }}
                       >
                         {meta?.emoji}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium truncate">{p.name}</div>
-                        <div className="text-xs text-slate-400 flex items-center gap-2">
+                        <div className="truncate font-medium">{p.name}</div>
+                        <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-400">
                           <span>{meta?.label}</span>
-                          {p.visibility === 'private' && (
-                            <span className="text-amber-400">[privat]</span>
-                          )}
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {p.lat.toFixed(5)}, {p.lon.toFixed(5)}
+                          </span>
+                          {p.visibility === 'private' && <span className="text-amber-400">[privat]</span>}
                           {p.elevation_m != null && (
                             <span className="font-mono">{Math.round(p.elevation_m)}m</span>
                           )}
                         </div>
+                        {(p.description ?? '').trim() !== '' && (
+                          <div className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{p.description}</div>
+                        )}
                       </div>
                     </button>
-                    <button
-                      onClick={() => remove(p.id)}
-                      className="text-slate-500 hover:text-red-400 px-2 py-1 text-xs"
-                      title="Sterge"
-                    >
-                      X
-                    </button>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      {onEditPoint && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditPoint(p);
+                          }}
+                          className="text-[11px] text-brand-400 hover:underline"
+                        >
+                          Editează
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void remove(p.id);
+                        }}
+                        className="min-h-[44px] min-w-[44px] px-2 py-2 text-xs text-slate-500 hover:text-red-400 md:min-h-0 md:min-w-0 md:px-1 md:py-0.5"
+                        title="Șterge"
+                      >
+                        X
+                      </button>
+                    </div>
                   </div>
                 </li>
               );
@@ -179,7 +270,7 @@ function FilterChip({ label, active, onClick, count, color }: FilterChipProps) {
   return (
     <button
       onClick={onClick}
-      className={`px-2 py-0.5 rounded-full text-xs font-medium border transition ${
+      className={`rounded-full border px-2 py-0.5 text-xs font-medium transition ${
         active
           ? 'border-transparent text-white'
           : 'border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-500'
