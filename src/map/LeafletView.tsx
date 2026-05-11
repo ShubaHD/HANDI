@@ -50,6 +50,8 @@ interface Props {
   cadLayers: CadLayerRow[];
   /** Când panoul de adnotări plasează pe hartă: nu interceptăm click-ul pe etichete CAD. */
   annotationPlacementMode?: boolean;
+  /** Click pe marcaj punct → trimite tot coordonatele (plasare punct nou). */
+  pointPlacementPickMode?: boolean;
   onMapClick?: (lng: number, lat: number) => void;
   onCadLabelTap?: (payload: CadLabelEditTapPayload) => void;
   onBoundsChange?: (b: {
@@ -141,6 +143,7 @@ export function LeafletView({
   annotations,
   cadLayers,
   annotationPlacementMode = false,
+  pointPlacementPickMode = false,
   onMapClick,
   onCadLabelTap,
   onBoundsChange,
@@ -150,8 +153,10 @@ export function LeafletView({
 }: Props) {
   const onMapClickRef = useRef(onMapClick);
   const onBoundsChangeRef = useRef(onBoundsChange);
+  const pointPlacementPickModeRef = useRef(pointPlacementPickMode);
   onMapClickRef.current = onMapClick;
   onBoundsChangeRef.current = onBoundsChange;
+  pointPlacementPickModeRef.current = pointPlacementPickMode;
 
   const divRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -286,6 +291,12 @@ export function LeafletView({
         });
       },
       onEachFeature: (f, lyr) => {
+        lyr.on('click', (ev: L.LeafletMouseEvent) => {
+          if (!pointPlacementPickModeRef.current) return;
+          const ll = ev.latlng;
+          onMapClickRef.current?.(ll.lng, ll.lat);
+          L.DomEvent.stopPropagation(ev);
+        });
         const props = (f.properties as { name?: string; type?: string } | null) ?? null;
         const name = props?.name ?? '';
         const type = props?.type ?? 'other';
@@ -328,7 +339,7 @@ export function LeafletView({
     return () => {
       map.off('zoomend', syncPointLabels);
     };
-  }, [pointsFC, clearHover, scheduleHover]);
+  }, [pointsFC, clearHover, scheduleHover, pointPlacementPickMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -338,6 +349,12 @@ export function LeafletView({
     const layer = L.geoJSON(zonesFC, {
       style: () => ({ color: '#38bdf8', weight: 2, fillOpacity: 0.12 }),
       onEachFeature: (f, lyr) => {
+        lyr.on('click', (ev: L.LeafletMouseEvent) => {
+          if (!pointPlacementPickModeRef.current) return;
+          const ll = ev.latlng;
+          onMapClickRef.current?.(ll.lng, ll.lat);
+          L.DomEvent.stopPropagation(ev);
+        });
         const props = (f.properties as { name?: string; status?: string; priority?: string } | null) ?? null;
         const name = props?.name ?? '';
         if (!name) return;
@@ -351,7 +368,7 @@ export function LeafletView({
     });
     layer.addTo(map);
     layersRef.current.zones = layer;
-  }, [zonesFC, clearHover, scheduleHover]);
+  }, [zonesFC, clearHover, scheduleHover, pointPlacementPickMode]);
 
   useEffect(() => {
     const map = mapRef.current;

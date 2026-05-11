@@ -7,8 +7,6 @@ interface Props {
   initialLat: number;
   initialLon: number;
   initialElevation?: number | null;
-  /** Centrul vizualizării curente pe hartă (din bbox), pentru butonul „Folosește centrul hărții”. */
-  getMapCenter?: () => { lat: number; lon: number } | null;
   /** După „Poziția mea (GPS)” — actualizează marcajul pe hartă. */
   onGpsLocated?: (lat: number, lon: number) => void;
   onCreated: () => void;
@@ -26,7 +24,6 @@ export function PointForm({
   initialLat,
   initialLon,
   initialElevation,
-  getMapCenter,
   onGpsLocated,
   onCreated,
   onCancel,
@@ -71,16 +68,6 @@ export function PointForm({
       (e) => alert('Nu pot obține poziția: ' + e.message),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
-  };
-
-  const fillMapCenter = () => {
-    const c = getMapCenter?.();
-    if (!c) {
-      alert('Deplasează harta puțin ca să se încarce aria vizibilă, apoi încearcă din nou.');
-      return;
-    }
-    setLatStr(String(c.lat));
-    setLonStr(String(c.lon));
   };
 
   const submit = async (e: FormEvent) => {
@@ -199,15 +186,6 @@ export function PointForm({
           >
             Poziția mea (GPS)
           </button>
-          {getMapCenter && (
-            <button
-              type="button"
-              onClick={fillMapCenter}
-              className="text-xs px-2 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700"
-            >
-              Centrul hărții
-            </button>
-          )}
         </div>
       </div>
 

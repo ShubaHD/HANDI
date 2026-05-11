@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import { POINT_TYPES, type PointOfInterest } from '@/lib/types';
 import { fetchPhotosForPoint, uploadPhotos, deletePhoto, type PhotoRecord } from './photos';
 import { safeDeletePoint } from '@/lib/db/safeApi';
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function PointDetail({ point, onClose, onChanged }: Props) {
+  const ask = useAppConfirm();
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -48,7 +50,7 @@ export function PointDetail({ point, onClose, onChanged }: Props) {
   };
 
   const onDeletePhoto = async (id: string, path: string) => {
-    if (!confirm('Stergi poza?')) return;
+    if (!(await ask('Stergi poza?'))) return;
     try {
       await deletePhoto(id, path);
       setPhotos((p) => p.filter((x) => x.id !== id));
@@ -58,7 +60,7 @@ export function PointDetail({ point, onClose, onChanged }: Props) {
   };
 
   const onDeletePoint = async () => {
-    if (!confirm('Stergi acest punct si toate pozele lui?')) return;
+    if (!(await ask('Stergi acest punct si toate pozele lui?'))) return;
     try {
       const r = await safeDeletePoint(point.id);
       if (r.ok === 'queued') alert('Stergere pusa in coada offline.');

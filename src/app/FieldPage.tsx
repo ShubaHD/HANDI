@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import { PMTiles } from 'pmtiles';
 import { MapView } from '@/map/MapView';
 import { PointForm } from '@/features/points/PointForm';
@@ -67,6 +68,7 @@ interface PendingPoint {
 type Tab = 'points' | 'tracks' | 'rasters' | 'cad';
 
 export default function FieldPage() {
+  const ask = useAppConfirm();
   const { user, signOut } = useAuth();
   const [points, setPoints] = useState<PointOfInterest[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -88,6 +90,8 @@ export default function FieldPage() {
 
   const [activeTab, setActiveTab] = useState<Tab>('points');
   const [pendingPoint, setPendingPoint] = useState<PendingPoint | null>(null);
+  /** După „Adaugă punct”: următorul click pe hartă setează poziția. */
+  const [awaitingPointOnMap, setAwaitingPointOnMap] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<PointOfInterest | null>(null);
   /** Editare din tabul Puncte (formular separat de overlay-ul de pe hartă). */
   const [pointListEdit, setPointListEdit] = useState<PointOfInterest | null>(null);
@@ -189,8 +193,13 @@ export default function FieldPage() {
       setAnnotMode('off');
       setArrowStart(null);
       setAnnotEdit(null);
+      setAwaitingPointOnMap(false);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (annotMode !== 'off') setAwaitingPointOnMap(false);
+  }, [annotMode]);
 
   useEffect(() => {
     void buildRasterUrlOverrides().then(setOfflinePmtilesById).catch(() => {
@@ -261,7 +270,7 @@ export default function FieldPage() {
   );
 
   const removeAnnot = async (id: string) => {
-    if (!confirm('Stergi aceasta adnotare?')) return;
+    if (!(await ask('Stergi aceasta adnotare?'))) return;
     try {
       const r = await safeDeleteAnnotation(id);
       await removeAnnotationFromLocalCache(id);
@@ -327,6 +336,17 @@ export default function FieldPage() {
   };
 
   const onMapClick = (lng: number, lat: number) => {
+    if (awaitingPointOnMap && activeTab === 'points' && annotMode === 'off') {
+      setPendingPoint({
+        lat,
+        lon: lng,
+        elevation: null,
+      });
+      setAwaitingPointOnMap(false);
+      setFlyTo({ lng, lat, zoom: Math.max(lastMapZoom ?? 0, 16) });
+      setSidebarOpen(false);
+      return;
+    }
     if (activeTab === 'points' && annotMode !== 'off') {
       void (async () => {
         try {
@@ -391,31 +411,15 @@ export default function FieldPage() {
       })();
       return;
     }
-    // Nu deschidem „Punct nou” la click liber pe hartă — evită conflicte cu CAD / explorare.
-    // Adăugarea se face din tab-ul Puncte sau din FAB-ul GPS (+).
+    // Punct nou: din tab Puncte („Adaugă punct” → click hartă) sau GPS (buton din listă / FAB).
   };
 
   const openAddPointForm = () => {
-    if (currentBbox) {
-      setPendingPoint({
-        lat: (currentBbox.minLat + currentBbox.maxLat) / 2,
-        lon: (currentBbox.minLon + currentBbox.maxLon) / 2,
-        elevation: null,
-      });
-    } else {
-      setPendingPoint({ lat: 45.9, lon: 22.9, elevation: null });
-    }
-  };
-
-  const mapCenterForPointForm = (): { lat: number; lon: number } | null => {
-    if (!currentBbox) return null;
-    return {
-      lat: (currentBbox.minLat + currentBbox.maxLat) / 2,
-      lon: (currentBbox.minLon + currentBbox.maxLon) / 2,
-    };
+    setAwaitingPointOnMap(true);
   };
 
   const addAtCurrentLocation = () => {
+    setAwaitingPointOnMap(false);
     if (!navigator.geolocation) {
       alert('Geolocation nu este disponibil pe acest device');
       return;
@@ -511,7 +515,7 @@ export default function FieldPage() {
         <aside
           className={`${
             sidebarOpen ? 'flex' : 'hidden'
-          } md:flex flex-col w-full md:w-80 lg:w-96 bg-slate-900 border-r border-slate-800 absolute md:relative inset-0 md:inset-auto z-10`}
+          } md:flex flex-col w-full md:w-80 lg:w-96 bg-slate-900 border-r border-slate-800 absolute md:relative inset-0 md:inset-auto z-20 isolate`}
         >
           <nav className="flex border-b border-slate-700 bg-slate-950">
             {(['points', 'tracks', 'rasters', 'cad'] as Tab[]).map((t) => (
@@ -830,6 +834,9 @@ export default function FieldPage() {
                 <PointsList
                   points={points}
                   onAddPoint={openAddPointForm}
+                  onAddPointWithGps={addAtCurrentLocation}
+                  pointPlacementAwaiting={awaitingPointOnMap}
+                  onCancelPointPlacement={() => setAwaitingPointOnMap(false)}
                   onSelect={(p) => {
                     setFlyTo({ lng: p.lon, lat: p.lat, zoom: 16 });
                     setSelectedPoint(p);
@@ -1021,6 +1028,7 @@ export default function FieldPage() {
             drawZoneMode={false}
             onZoneDrawn={() => {}}
             annotationPlacementMode={activeTab === 'points' && annotMode !== 'off'}
+            pointPlacementPickMode={awaitingPointOnMap && activeTab === 'points' && annotMode === 'off'}
             onMapClick={onMapClick}
             onCadLabelTap={handleCadLabelTap}
             onPointClick={(id) => {
@@ -1099,16 +1107,19 @@ export default function FieldPage() {
               initialLat={pendingPoint.lat}
               initialLon={pendingPoint.lon}
               initialElevation={pendingPoint.elevation}
-              getMapCenter={mapCenterForPointForm}
               onGpsLocated={(lat, lon) => {
                 setMyLocation({ lat, lon });
                 setFlyTo({ lng: lon, lat, zoom: 16 });
               }}
               onCreated={() => {
                 setPendingPoint(null);
+                setAwaitingPointOnMap(false);
                 void reload();
               }}
-              onCancel={() => setPendingPoint(null)}
+              onCancel={() => {
+                setPendingPoint(null);
+                setAwaitingPointOnMap(false);
+              }}
             />
           </Modal>
         )}
@@ -1143,11 +1154,13 @@ export default function FieldPage() {
                 <>
                   <button
                     onClick={() => {
-                      const ok = confirm(
-                        'Reset cache (Service Worker + caches) si reload?\\n\\nFoloseste asta cand aplicatia pare blocata dupa deploy.',
-                      );
-                      if (!ok) return;
                       void (async () => {
+                        if (
+                          !(await ask(
+                            'Reset cache (Service Worker + caches) si reload?\n\nFoloseste asta cand aplicatia pare blocata dupa deploy.',
+                          ))
+                        )
+                          return;
                         try {
                           if ('serviceWorker' in navigator) {
                             const regs = await navigator.serviceWorker.getRegistrations();

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { Visibility } from '@/lib/types';
 import {
   deleteCavePlan,
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export function CavePlansPanel({ onPlansLoaded, onZoomTo }: Props) {
+  const ask = useAppConfirm();
   const [plans, setPlans] = useState<CavePlan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +88,7 @@ export function CavePlansPanel({ onPlansLoaded, onZoomTo }: Props) {
   };
 
   const remove = async (p: CavePlan) => {
-    if (!confirm(`Stergi "${p.name}"?`)) return;
+    if (!(await ask(`Stergi "${p.name}"?`))) return;
     await deleteCavePlan(p);
     const next = plans.filter((x) => x.id !== p.id);
     setPlans(next);

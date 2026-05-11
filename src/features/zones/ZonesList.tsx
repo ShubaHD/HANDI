@@ -1,3 +1,4 @@
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { Zone } from '@/lib/types';
 import { safeDeleteZone, safeUpdateZoneStatus } from '@/lib/db/safeApi';
 
@@ -28,8 +29,9 @@ interface Props {
 }
 
 export function ZonesList({ zones, onSelect, onChanged }: Props) {
+  const ask = useAppConfirm();
   const remove = async (id: string) => {
-    if (!confirm('Stergi aceasta zona?')) return;
+    if (!(await ask('Stergi aceasta zona?'))) return;
     try {
       const r = await safeDeleteZone(id);
       if (r.ok === 'queued') alert('Stergere pusa in coada offline.');

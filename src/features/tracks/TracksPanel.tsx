@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { Track } from '@/lib/types';
 import { safeCreateTrack, safeDeleteTrack } from '@/lib/db/safeApi';
 import { downloadFile, parseGpxFile, tracksToGpx } from './gpx';
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function TracksPanel({ tracks, onSelect, onChanged }: Props) {
+  const ask = useAppConfirm();
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +59,7 @@ export function TracksPanel({ tracks, onSelect, onChanged }: Props) {
   };
 
   const remove = async (id: string) => {
-    if (!confirm('Stergi acest traseu?')) return;
+    if (!(await ask('Stergi acest traseu?'))) return;
     try {
       const r = await safeDeleteTrack(id);
       if (r.ok === 'queued') alert('Stergere pusa in coada offline.');

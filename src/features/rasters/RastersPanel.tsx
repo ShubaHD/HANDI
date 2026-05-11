@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { RasterKind, RasterOverlay } from '@/lib/types';
 import { deleteRaster } from './api';
 
@@ -43,6 +44,7 @@ export function RastersPanel({
   offlinePmtilesById,
   onChanged,
 }: Props) {
+  const ask = useAppConfirm();
   const [saving, setSaving] = useState<Record<string, { loaded: number; total?: number }>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -56,7 +58,7 @@ export function RastersPanel({
   }, [rasters]);
 
   const remove = async (r: RasterOverlay) => {
-    if (!confirm(`Stergi raster overlay "${r.name}"?`)) return;
+    if (!(await ask(`Stergi raster overlay "${r.name}"?`))) return;
     try {
       await deleteRaster(r);
       onChanged();
@@ -147,11 +149,13 @@ export function RastersPanel({
                                 });
                               });
                           } else {
-                            if (!confirm('Stergi copia offline pentru acest LiDAR?')) return;
-                            setBusyId(r.id);
-                            void onDeleteOfflinePmtiles(r)
-                              .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
-                              .finally(() => setBusyId(null));
+                            void (async () => {
+                              if (!(await ask('Stergi copia offline pentru acest LiDAR?'))) return;
+                              setBusyId(r.id);
+                              void onDeleteOfflinePmtiles(r)
+                                .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
+                                .finally(() => setBusyId(null));
+                            })();
                           }
                         }}
                         className="text-xs px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-50"

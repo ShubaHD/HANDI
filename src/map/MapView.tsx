@@ -52,6 +52,8 @@ interface Props {
   onZoneDrawn: (polygon: GeoJSON.Polygon) => void;
   /** Când e activ (ex. panoul A), click-ul pe hartă merge la onMapClick chiar dacă există CAD / punct / zonă sub cursor. */
   annotationPlacementMode?: boolean;
+  /** Când e activ, click-ul (inclusiv peste puncte/zone) plasează poziția pentru punct nou. */
+  pointPlacementPickMode?: boolean;
   onMapClick?: (lng: number, lat: number) => void;
   onPointClick?: (id: string) => void;
   onZoneClick?: (id: string) => void;
@@ -101,6 +103,7 @@ export function MapView({
   drawZoneMode,
   onZoneDrawn,
   annotationPlacementMode = false,
+  pointPlacementPickMode = false,
   onMapClick,
   onPointClick,
   onZoneClick,
@@ -170,6 +173,7 @@ export function MapView({
     onZoneDrawn,
     onBoundsChange,
     annotationPlacementMode,
+    pointPlacementPickMode,
   });
   handlersRef.current = {
     onMapClick,
@@ -179,6 +183,7 @@ export function MapView({
     onZoneDrawn,
     onBoundsChange,
     annotationPlacementMode,
+    pointPlacementPickMode,
   };
 
   const installLayers = (map: MlMap) => {
@@ -394,6 +399,10 @@ export function MapView({
 
     map.on('click', (e) => {
       if (drawRef.current?.enabled) return;
+      if (handlersRef.current.pointPlacementPickMode) {
+        handlersRef.current.onMapClick?.(e.lngLat.lng, e.lngLat.lat);
+        return;
+      }
       if (handlersRef.current.annotationPlacementMode) {
         handlersRef.current.onMapClick?.(e.lngLat.lng, e.lngLat.lat);
         return;
@@ -762,7 +771,7 @@ export function MapView({
     return (
       <div className="relative h-full w-full min-h-0">
         <div
-          className={`absolute inset-0 z-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}`}
+          className={`absolute inset-0 z-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}${pointPlacementPickMode ? ' cursor-crosshair' : ''}`}
         >
           <LeafletView
             base={base}
@@ -772,6 +781,7 @@ export function MapView({
             annotations={annotations}
             cadLayers={cadLayers}
             annotationPlacementMode={annotationPlacementMode}
+            pointPlacementPickMode={pointPlacementPickMode}
             onMapClick={onMapClick}
             onCadLabelTap={onCadLabelTap}
             onBoundsChange={onBoundsChange}
@@ -828,7 +838,7 @@ export function MapView({
     <div className="relative h-full w-full min-h-0">
       <div
         ref={containerRef}
-        className={`absolute inset-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}`}
+        className={`absolute inset-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}${pointPlacementPickMode ? ' cursor-crosshair' : ''}`}
       />
       {betweenMapAndControls}
       {hover && <MapHoverTooltip x={hover.x} y={hover.y} data={hover.data} />}

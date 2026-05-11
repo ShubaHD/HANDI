@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import {
   bboxFromCadImportBounds,
   cadImportSourceUrl,
@@ -70,6 +71,7 @@ function formatDxfDiagReport(fileName: string, d: DxfParseDiagnostics): string {
 }
 
 export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: Props) {
+  const ask = useAppConfirm();
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
@@ -233,7 +235,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
   };
 
   const removeImport = async (imp: CadImport) => {
-    if (!confirm(`Ștergi importul „${imp.name}” și toate layerele CAD?`)) return;
+    if (!(await ask(`Ștergi importul „${imp.name}” și toate layerele CAD?`))) return;
     await deleteCadImport(imp);
     void onRefresh();
   };

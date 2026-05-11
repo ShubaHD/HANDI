@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import { BASE_MAPS, type BaseMapDef } from '@/map/layers/BaseLayers';
 import {
   buildBaseMapsFromArchives,
@@ -44,6 +45,7 @@ export function BaseMapSwitcher({
   viewportZoom,
   onOfflinePackComplete,
 }: Props) {
+  const ask = useAppConfirm();
   const [offlineBases, setOfflineBases] = useState<BaseMapDef[]>([]);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function BaseMapSwitcher({
   };
 
   const removeOffline = async (id: string) => {
-    if (!confirm('Stergi aceasta harta offline?')) return;
+    if (!(await ask('Stergi aceasta harta offline?'))) return;
     const key = id.replace(/^pmtiles-/, '');
     await deleteLocalArchive(key);
     await refreshOffline();
@@ -300,7 +302,8 @@ export function BaseMapSwitcher({
             <div key={b.id} className="flex gap-1.5">
               <BaseMapButton b={b} active={current === b.id} onClick={() => onChange(b)} />
               <button
-                onClick={() => removeOffline(b.id)}
+                type="button"
+                onClick={() => void removeOffline(b.id)}
                 className="px-2 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-red-900/40 text-xs"
                 title="Sterge"
               >

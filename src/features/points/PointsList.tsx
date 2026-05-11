@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useAppConfirm } from '@/components/ConfirmProvider';
 import { pointDisplayColor } from '@/features/points/pointStyle';
 import { POINT_TYPES, type PointOfInterest, type PointType } from '@/lib/types';
 import { safeDeletePoint } from '@/lib/db/safeApi';
@@ -6,14 +7,30 @@ import { downloadPointsCsv, pointsToCsv } from '@/features/points/pointsCsv';
 
 interface Props {
   points: PointOfInterest[];
+  /** Începe plasarea punctului: utilizatorul apasă apoi pe hartă. */
   onAddPoint: () => void;
+  /** Deschide formularul direct cu poziția GPS (fără click pe hartă). */
+  onAddPointWithGps: () => void;
+  /** Așteaptă click pe hartă pentru poziție. */
+  pointPlacementAwaiting?: boolean;
+  onCancelPointPlacement?: () => void;
   onSelect: (p: PointOfInterest) => void;
   onChanged: () => void;
   /** Deschide formularul de editare în tabul Puncte (ex. modal din FieldPage). */
   onEditPoint?: (p: PointOfInterest) => void;
 }
 
-export function PointsList({ points, onAddPoint, onSelect, onChanged, onEditPoint }: Props) {
+export function PointsList({
+  points,
+  onAddPoint,
+  onAddPointWithGps,
+  pointPlacementAwaiting,
+  onCancelPointPlacement,
+  onSelect,
+  onChanged,
+  onEditPoint,
+}: Props) {
+  const ask = useAppConfirm();
   const [filter, setFilter] = useState<PointType | 'all'>('all');
   const [query, setQuery] = useState('');
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -55,7 +72,7 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged, onEditPoin
   }, [filtered, selectedIds]);
 
   const remove = async (id: string) => {
-    if (!confirm('Stergi acest punct?')) return;
+    if (!(await ask('Stergi acest punct?'))) return;
     try {
       const r = await safeDeletePoint(id);
       if (r.ok === 'queued') alert('Stergere pusa in coada offline.');
@@ -74,9 +91,9 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged, onEditPoin
     const toDelete = points.filter((p) => p.type === type);
     if (toDelete.length === 0) return;
     if (
-      !confirm(
+      !(await ask(
         `Ștergi TOATE punctele de tip „${POINT_TYPES.find((t) => t.value === type)?.label ?? type}”? (${toDelete.length} buc.)`,
-      )
+      ))
     )
       return;
 
@@ -108,6 +125,27 @@ export function PointsList({ points, onAddPoint, onSelect, onChanged, onEditPoin
         >
           Adaugă punct
         </button>
+        <button
+          type="button"
+          onClick={onAddPointWithGps}
+          className="w-full rounded-lg border border-slate-600 bg-slate-800 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700"
+        >
+          Poziția mea (GPS)
+        </button>
+        {pointPlacementAwaiting && (
+          <div className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-2 py-2 text-[11px] leading-snug text-amber-100">
+            Apasă pe hartă unde vrei punctul.
+            {onCancelPointPlacement && (
+              <button
+                type="button"
+                onClick={onCancelPointPlacement}
+                className="ml-2 font-medium text-amber-50 underline hover:no-underline"
+              >
+                Anulează
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1">
           <button
             type="button"
