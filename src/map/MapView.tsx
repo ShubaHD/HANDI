@@ -155,6 +155,13 @@ export function MapView({
   const lastHoverKeyRef = useRef<string>('');
   const [hover, setHover] = useState<{ x: number; y: number; data: HoverTooltipData } | null>(null);
 
+  const maplibreQs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const forceLeaflet = Boolean(maplibreQs?.has('leaflet'));
+  const forceMaplibre = Boolean(maplibreQs?.has('maplibre'));
+  const basemapNeedsMapLibre = Boolean(base.pmtiles && base.pmtilesUrl);
+  /** Leaflet implicit; MapLibre forțat cu ?maplibre=1 sau când basemap-ul e PMTiles (offline). */
+  const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
+
   const clearHover = () => {
     if (hoverTimerRef.current) {
       window.clearTimeout(hoverTimerRef.current);
@@ -275,7 +282,21 @@ export function MapView({
   };
 
   useEffect(() => {
+    if (useLeaflet) {
+      const existing = mapRef.current;
+      if (existing) {
+        try {
+          existing.remove();
+        } catch {
+          /* ignore */
+        }
+        mapRef.current = null;
+      }
+      return;
+    }
     if (!containerRef.current) return;
+    if (mapRef.current) return;
+
     const last = readLastViewport();
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -648,7 +669,7 @@ export function MapView({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [useLeaflet]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -926,14 +947,6 @@ export function MapView({
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
-
-  // Default renderer: Leaflet (most compatible). PMTiles basemap (offline) needs MapLibre + protocol `pmtiles://`.
-  // Use MapLibre explicitly via ?maplibre=1 (raster overlays / parity). Force Leaflet via ?leaflet=1 (ignored for PMTiles).
-  const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const forceLeaflet = Boolean(qs?.has('leaflet'));
-  const forceMaplibre = Boolean(qs?.has('maplibre'));
-  const basemapNeedsMapLibre = Boolean(base.pmtiles && base.pmtilesUrl);
-  const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
 
   if (useLeaflet) {
     return (

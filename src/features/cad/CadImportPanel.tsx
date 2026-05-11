@@ -12,11 +12,15 @@ import {
   cadLabelLockedFromStyle,
   cadLabelMaxZoomFromStyle,
   cadLabelMinZoomFromStyle,
+  cadLabelPlainFromStyle,
+  cadLabelTextColorFromStyle,
+  cadLabelTextSizeFromStyle,
 } from './cadLayerLabelStyle';
 import {
   classifyCadImport,
   isCadLabelKind,
   mergeCadStyleForNewKind,
+  usesCadLabelRendering,
   type ClassifiedCadLayer,
 } from './classifyCadLayer';
 import { parseDxfStereo70Full, type DxfParseDiagnostics, type Stereo70SourceCrs } from './dxfImport';
@@ -56,6 +60,11 @@ interface Props {
   cadLayers: CadLayerRow[];
   onRefresh: () => void;
   onZoomTo: (bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
+}
+
+/** Valoare validă pentru `<input type="color">` (#rrggbb). */
+function hexForColorInput(style: Record<string, unknown>, layerColor: string): string {
+  return cadLabelTextColorFromStyle(style, layerColor);
 }
 
 function cadStyleDefaults(row: CadLayerRow): { color: string; width: number; opacity: number } {
@@ -445,6 +454,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                           const rowStyleObj = (row.style ?? {}) as Record<string, unknown>;
                           const cadMinZUi = cadLabelMinZoomFromStyle(rowStyleObj);
                           const cadMaxZUi = cadLabelMaxZoomFromStyle(rowStyleObj);
+                          const cadLabelTextPxUi = cadLabelTextSizeFromStyle(rowStyleObj);
                           return (
                             <li key={row.id} className="px-2 py-1.5 text-xs">
                               <div className="flex items-center gap-2">
@@ -549,8 +559,78 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                     </label>
                                   </div>
 
-                                  {isCadLabelKind(row.kind) && (
+                                  {usesCadLabelRendering(row.kind) && (
                                     <div className="space-y-2 pt-1 border-t border-slate-800/80">
+                                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                        Aspect etichete
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <label className="text-[11px] text-slate-400 shrink-0">
+                                          Culoare text
+                                          <input
+                                            type="color"
+                                            className="mt-1 block h-8 w-14 rounded border border-slate-700 bg-slate-950 cursor-pointer"
+                                            value={hexForColorInput(rowStyleObj, st.color)}
+                                            disabled={editingBusy}
+                                            onChange={(e) =>
+                                              void saveLayerStyle(row, {
+                                                style: { ...(row.style ?? {}), cadLabelTextColor: e.target.value },
+                                              })
+                                            }
+                                          />
+                                        </label>
+                                        <button
+                                          type="button"
+                                          className="mt-5 text-[10px] px-2 py-1 rounded border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                                          disabled={editingBusy}
+                                          onClick={() => {
+                                            const next = { ...(row.style ?? {}) } as Record<string, unknown>;
+                                            delete next.cadLabelTextColor;
+                                            void saveLayerStyle(row, { style: next });
+                                          }}
+                                        >
+                                          = culoare layer
+                                        </button>
+                                      </div>
+                                      <label className="block text-[11px] text-slate-400">
+                                        Mărime text (px, 8–28, opțional)
+                                        <input
+                                          type="number"
+                                          min={8}
+                                          max={28}
+                                          step={1}
+                                          className="mt-1 w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs"
+                                          placeholder="implicit 12–13"
+                                          value={cadLabelTextPxUi == null ? '' : cadLabelTextPxUi}
+                                          disabled={editingBusy}
+                                          onChange={(e) => {
+                                            const raw = e.target.value.trim();
+                                            const next = { ...(row.style ?? {}) } as Record<string, unknown>;
+                                            if (raw === '') delete next.cadLabelTextSize;
+                                            else {
+                                              const n = parseInt(raw, 10);
+                                              if (Number.isFinite(n)) next.cadLabelTextSize = n;
+                                            }
+                                            void saveLayerStyle(row, { style: next });
+                                          }}
+                                        />
+                                      </label>
+                                      <label className="flex items-center gap-2 text-[11px] text-slate-300">
+                                        <input
+                                          type="checkbox"
+                                          className="w-3.5 h-3.5 accent-brand-500 shrink-0"
+                                          checked={cadLabelPlainFromStyle(rowStyleObj)}
+                                          disabled={editingBusy}
+                                          onChange={(e) =>
+                                            void saveLayerStyle(row, {
+                                              style: { ...(row.style ?? {}), cadLabelPlain: e.target.checked },
+                                            })
+                                          }
+                                        />
+                                        Text simplu: fără fundal (Leaflet) / fără contur (MapLibre)
+                                      </label>
+                                      {isCadLabelKind(row.kind) && (
+                                        <>
                                       <label className="flex items-center gap-2 text-[11px] text-slate-300">
                                         <input
                                           type="checkbox"
@@ -611,6 +691,8 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                                           }}
                                         />
                                       </label>
+                                        </>
+                                      )}
                                     </div>
                                   )}
 

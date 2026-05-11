@@ -41,6 +41,20 @@ body {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
+.leaflet-tooltip.handi-cad-leaflet-label .handi-cad-leaflet-label-inner {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* Text direct pe hartă: fără cutie / fără fundal (culoarea vine din inline style pe inner). */
+.leaflet-tooltip.handi-cad-leaflet-label--plain {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 2px;
+  color: inherit;
+}
+
 /* Mod plasare adnotări: cursor „mână” pe hartă (Leaflet / MapLibre). */
 .handi-cursor-annot-placement,
 .handi-cursor-annot-placement .leaflet-container,

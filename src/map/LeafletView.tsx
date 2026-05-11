@@ -12,6 +12,9 @@ import {
   cadLabelLockedFromStyle,
   cadLabelMaxZoomFromStyle,
   cadLabelMinZoomFromStyle,
+  cadLabelPlainFromStyle,
+  cadLabelTextColorFromStyle,
+  cadLabelTextSizeFromStyle,
 } from '@/features/cad/cadLayerLabelStyle';
 import { CAD_FEATURE_ID_KEY, type CadLabelEditTapPayload } from '@/features/cad/cadFeatureIds';
 import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from '@/features/cad/cadMapLabels';
@@ -649,28 +652,36 @@ export function LeafletView({
           if (usesCadLabelRendering(row.kind) && label && !isJunkCadPlaceholderLabel(label)) {
             const strokeOp = st.opacity ?? 1;
             const fillOp = Math.min(0.45, (st.opacity ?? 0.85) * 0.5);
+            const labelPlain = cadLabelPlainFromStyle(styleRec);
+            const labelTextColor = cadLabelTextColorFromStyle(styleRec, st.color ?? '#0f172a');
+            const labelTextPx = cadLabelTextSizeFromStyle(styleRec) ?? 12;
             const m = L.circleMarker(latlng, {
               radius: 12,
               color: st.color,
-              weight: 1,
-              opacity: strokeOp,
+              weight: labelPlain ? 0 : 1,
+              opacity: labelPlain ? 0 : strokeOp,
               fillColor: st.color,
-              fillOpacity: fillOp,
+              fillOpacity: labelPlain ? 0 : fillOp,
             });
             const cm = m as L.CircleMarker & {
               handiCadTextLabel?: boolean;
               handiCadDefStrokeOp?: number;
               handiCadDefFillOp?: number;
+              handiCadLabelPlain?: boolean;
             };
             cm.handiCadTextLabel = true;
-            cm.handiCadDefStrokeOp = strokeOp;
-            cm.handiCadDefFillOp = fillOp;
-            m.bindTooltip(escapeHtml(label), {
+            cm.handiCadLabelPlain = labelPlain;
+            cm.handiCadDefStrokeOp = labelPlain ? 0 : strokeOp;
+            cm.handiCadDefFillOp = labelPlain ? 0 : fillOp;
+            const tipHtml = `<span class="handi-cad-leaflet-label-inner" style="color:${labelTextColor};font-size:${labelTextPx}px">${escapeHtml(label)}</span>`;
+            m.bindTooltip(tipHtml, {
               permanent: true,
               direction: 'top',
               offset: [0, -6],
               opacity: 0.95,
-              className: 'handi-cad-leaflet-label',
+              className: labelPlain
+                ? 'handi-cad-leaflet-label handi-cad-leaflet-label--plain'
+                : 'handi-cad-leaflet-label',
             });
             return m;
           }
@@ -757,10 +768,15 @@ export function LeafletView({
             handiCadDefFillOp?: number;
           };
           if (!t.handiCadTextLabel) return;
+          const plain = Boolean((t as L.CircleMarker & { handiCadLabelPlain?: boolean }).handiCadLabelPlain);
           const so = t.handiCadDefStrokeOp ?? 1;
           const fo = t.handiCadDefFillOp ?? 0.4;
           if (show) {
-            t.setStyle({ opacity: so, fillOpacity: fo, weight: 1 });
+            if (plain) {
+              t.setStyle({ opacity: 0, fillOpacity: 0, weight: 0 });
+            } else {
+              t.setStyle({ opacity: so, fillOpacity: fo, weight: 1 });
+            }
             t.openTooltip?.();
           } else {
             t.setStyle({ opacity: 0, fillOpacity: 0, weight: 0 });

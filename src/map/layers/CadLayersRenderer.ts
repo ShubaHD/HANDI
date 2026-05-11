@@ -1,7 +1,13 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { CadLayerRow } from '@/features/cad/api';
 import { sanitizeCadLabelsFeatureCollection } from '@/features/cad/cadMapLabels';
-import { cadLabelMaxZoomFromStyle, cadLabelMinZoomFromStyle } from '@/features/cad/cadLayerLabelStyle';
+import {
+  cadLabelMaxZoomFromStyle,
+  cadLabelMinZoomFromStyle,
+  cadLabelPlainFromStyle,
+  cadLabelTextColorFromStyle,
+  cadLabelTextSizeFromStyle,
+} from '@/features/cad/cadLayerLabelStyle';
 import { isCadLabelKind, usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
 import type { FeatureCollection } from 'geojson';
 
@@ -69,6 +75,18 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
     const labelZoom = cadLabelZoomBounds(row);
 
     const addCadTextSymbolLayer = () => {
+      const srec = (row.style ?? {}) as Record<string, unknown>;
+      const textColor = cadLabelTextColorFromStyle(srec, st.color);
+      const plain = cadLabelPlainFromStyle(srec);
+      const textSize = cadLabelTextSizeFromStyle(srec) ?? 13;
+      const paint: Record<string, unknown> = {
+        'text-color': textColor,
+        'text-opacity': st.opacity,
+      };
+      if (!plain) {
+        paint['text-halo-color'] = '#ffffff';
+        paint['text-halo-width'] = 1.2;
+      }
       map.addLayer({
         id: `${PREFIX_LAYER}${row.id}-sym`,
         type: 'symbol',
@@ -85,18 +103,13 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
         layout: {
           'text-field': cadLabelExpr as never,
           'text-font': CAD_LABEL_TEXT_FONT as never,
-          'text-size': 13,
+          'text-size': textSize,
           'text-offset': [0, 0.6],
           'text-anchor': 'top',
           'text-allow-overlap': true,
           'text-optional': true,
         },
-        paint: {
-          'text-color': st.color,
-          'text-halo-color': '#fff',
-          'text-halo-width': 1.2,
-          'text-opacity': st.opacity,
-        },
+        paint: paint as never,
       });
     };
 
