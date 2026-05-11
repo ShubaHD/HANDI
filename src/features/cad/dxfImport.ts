@@ -129,6 +129,20 @@ function entityPosition(e: Record<string, unknown>): XY | undefined {
   );
 }
 
+/** LINE: dxf-parser >=1.x uses `vertices` [start, end]; older builds used `start`/`end`. */
+function lineEndpoints(e: Record<string, unknown>): [XY, XY] | null {
+  const v1 = asXY(e.start);
+  const v2 = asXY(e.end);
+  if (v1 && v2) return [v1, v2];
+  const verts = e.vertices as unknown;
+  if (Array.isArray(verts) && verts.length >= 2) {
+    const a = asXY(verts[0]);
+    const b = asXY(verts[verts.length - 1]);
+    if (a && b) return [a, b];
+  }
+  return null;
+}
+
 function decodeDxfText(s: string): string {
   // Common DXF TEXT escapes (esp. from ODA/AutoCAD exports)
   return String(s ?? '')
@@ -448,9 +462,9 @@ export function parseDxfStereo70Full(
     const toLL = (pt: XY) => toLonLat(sourceCrs, applyAffine(A, pt));
 
     if (type === 'LINE') {
-      const v1 = e.start as XY | undefined;
-      const v2 = e.end as XY | undefined;
-      if (!v1 || !v2) return;
+      const ends = lineEndpoints(e);
+      if (!ends) return;
+      const [v1, v2] = ends;
       push(ln, {
         type: 'Feature',
         properties: { entity: 'LINE' },

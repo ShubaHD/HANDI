@@ -11,6 +11,29 @@ proj4.defs(
 
 type XY = { x: number; y: number };
 
+function asXY(v: unknown): XY | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as { x?: unknown; y?: unknown };
+  const x = Number(o.x);
+  const y = Number(o.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+  return { x, y };
+}
+
+/** LINE: dxf-parser uses `vertices` [start, end], not always `start`/`end`. */
+function lineEndpoints(e: Record<string, unknown>): [XY, XY] | null {
+  const v1 = asXY(e.start);
+  const v2 = asXY(e.end);
+  if (v1 && v2) return [v1, v2];
+  const verts = e.vertices as unknown;
+  if (Array.isArray(verts) && verts.length >= 2) {
+    const a = asXY(verts[0]);
+    const b = asXY(verts[verts.length - 1]);
+    if (a && b) return [a, b];
+  }
+  return null;
+}
+
 export interface ParsedPlan {
   name: string;
   geom: GeoJSON.MultiLineString;
@@ -41,9 +64,8 @@ export function parseDxfStereo70ToWgs84(fileName: string, dxfText: string): Pars
   for (const e of ents) {
     const type = (e.type as string | undefined)?.toUpperCase();
     if (type === 'LINE') {
-      const v1 = e.start as XY | undefined;
-      const v2 = e.end as XY | undefined;
-      if (v1 && v2) addPolyline([v1, v2]);
+      const ends = lineEndpoints(e);
+      if (ends) addPolyline([ends[0], ends[1]]);
     } else if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
       // dxf-parser uses .vertices for POLYLINE and .vertices/.points for LWPOLYLINE depending on source
       const v = (e.vertices ?? e.points) as XY[] | undefined;
