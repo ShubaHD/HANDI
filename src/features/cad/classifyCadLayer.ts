@@ -16,7 +16,8 @@ const RULES: { kind: CadLayerKind; pattern: RegExp }[] = [
   { kind: 'caves', pattern: /^(PESTERI?|CAVE|CAV|PEST|INTRARE)/i },
   { kind: 'dolines', pattern: /^(DOLINE?|DOLINA|SINKHOLE)/i },
   { kind: 'contours', pattern: /^(CONTUR|CONTOUR|CURBE|NIVEL|ELEVATION|CN?)/i },
-  { kind: 'labels', pattern: /^(NUME|NAME|LABEL|ETICHETA|TEXT)/i },
+  // Include common Romanian cave-number layers (e.g. nr_pestera) so TEXT/MTEXT points render as map labels.
+  { kind: 'labels', pattern: /^(NUME|NAME|LABEL|ETICHETA|TEXT|nr_pestera|nr[_-]?pest|numar)/i },
   { kind: 'springs', pattern: /^(IZVOR|SPRING|SOURCE)/i },
   { kind: 'avens', pattern: /^(AVEN|SHAFT|PUT)/i },
 ];

@@ -51,6 +51,8 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
           'all',
           ['==', ['geometry-type'], 'Point'],
           ['!=', ['coalesce', ['get', 'text'], ''], ''],
+          // Civil 3D / marker blocks sometimes export placeholder TEXT "Mark" instead of real labels.
+          ['!=', ['get', 'text'], 'Mark'],
         ] as never,
         layout: {
           // Show only real text labels; avoid block names like "Mark".
