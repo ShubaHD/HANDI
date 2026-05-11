@@ -4,6 +4,7 @@ import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { cadLabelLockedFromStyle } from '@/features/cad/cadLayerLabelStyle';
 import { buildBaseMapsFromArchives, ensurePMTilesProtocol } from '@/lib/pmtiles';
+import { mapAcceptsOverlayLayers } from '@/map/mapOverlayReadiness';
 import { buildBaseStyle, getBaseMapById, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
 import { LeafletView } from './LeafletView';
 
@@ -722,15 +723,38 @@ export function MapView({
       map.setStyle(base.styleUrl ?? buildBaseStyle(base));
     }
 
-    /** Primul `idle` poate veni înainte ca `isStyleLoaded()` să fie true → fără surse overlay / CAD. */
+    /**
+     * `isStyleLoaded()` poate rămâne false cât timp tile-urile raster nu sosesc (offline).
+     * Totuși sursa `base` există — putem desena CAD / puncte / trasee peste fundal.
+     */
     const runInstallWhenStyleReady = () => {
       let frames = 0;
       const tick = () => {
         if (cancelled) return;
-        if (!map.isStyleLoaded()) {
+        const ready = mapAcceptsOverlayLayers(map);
+        if (!ready) {
           frames += 1;
-          if (frames > 240) {
-            console.warn('[MapView] basemap: style nu s-a încărcat la timp; straturi omise');
+          if (frames > 420) {
+            console.warn(
+              '[MapView] basemap: forțăm installLayers (tile-uri pot lipsi; straturile tale ar trebui să apară peste fundal).',
+            );
+            try {
+              ensureInputsEnabled(map);
+              installLayers(map);
+              const b = base.pmtilesBounds;
+              if (base.pmtiles && Array.isArray(b) && b.length === 4 && b.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+                const maxZ = Math.min(base.maxzoom ?? 18, 19);
+                map.fitBounds(
+                  [
+                    [b[0], b[1]],
+                    [b[2], b[3]],
+                  ],
+                  { padding: 48, maxZoom: maxZ, duration: 700 },
+                );
+              }
+            } catch (e) {
+              console.error('[map] installLayers (forced)', e);
+            }
             return;
           }
           requestAnimationFrame(tick);
@@ -780,28 +804,28 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) updatePointsLayer(map, points);
+    if (mapAcceptsOverlayLayers(map)) updatePointsLayer(map, points);
     else map.once('idle', () => updatePointsLayer(map, points));
   }, [points]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) updateZonesLayer(map, zones);
+    if (mapAcceptsOverlayLayers(map)) updateZonesLayer(map, zones);
     else map.once('idle', () => updateZonesLayer(map, zones));
   }, [zones]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) updateTracksLayer(map, tracks);
+    if (mapAcceptsOverlayLayers(map)) updateTracksLayer(map, tracks);
     else map.once('idle', () => updateTracksLayer(map, tracks));
   }, [tracks]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) updateAnnotationsLayer(map, annotations);
+    if (mapAcceptsOverlayLayers(map)) updateAnnotationsLayer(map, annotations);
     else map.once('idle', () => updateAnnotationsLayer(map, annotations));
   }, [annotations]);
 
@@ -814,14 +838,14 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) syncRasterLayers(map, rasters, rasterState);
+    if (mapAcceptsOverlayLayers(map)) syncRasterLayers(map, rasters, rasterState);
     else map.once('idle', () => syncRasterLayers(map, rasters, rasterState));
   }, [rasters, rasterState]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) updateCadLayersOnMap(map, cadLayers);
+    if (mapAcceptsOverlayLayers(map)) updateCadLayersOnMap(map, cadLayers);
     else map.once('idle', () => updateCadLayersOnMap(map, cadLayers));
   }, [cadLayers]);
 

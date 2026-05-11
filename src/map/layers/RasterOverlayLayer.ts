@@ -1,5 +1,6 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { RasterOverlay } from '@/lib/types';
+import { mapAcceptsOverlayLayers } from '@/map/mapOverlayReadiness';
 import { publicUrl, rasterCornersFromBounds } from '@/features/rasters/api';
 
 const SOURCE_PREFIX = 'raster-overlay-src-';
@@ -17,7 +18,7 @@ export function syncRasterLayers(
   rasters: RasterOverlay[],
   state: RasterLayerState,
 ) {
-  if (!map.isStyleLoaded()) return;
+  if (!mapAcceptsOverlayLayers(map)) return;
 
   const desiredIds = new Set(rasters.filter((r) => state.visibleIds.has(r.id)).map((r) => r.id));
 

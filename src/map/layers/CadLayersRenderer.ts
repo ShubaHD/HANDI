@@ -1,5 +1,6 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { CadLayerRow } from '@/features/cad/api';
+import { mapAcceptsOverlayLayers } from '@/map/mapOverlayReadiness';
 import { sanitizeCadLabelsFeatureCollection } from '@/features/cad/cadMapLabels';
 import {
   cadLabelMaxZoomFromStyle,
@@ -54,7 +55,7 @@ function removeAllCadLayers(map: MlMap) {
 }
 
 export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
-  if (!map.isStyleLoaded()) return;
+  if (!mapAcceptsOverlayLayers(map)) return;
   removeAllCadLayers(map);
 
   for (const row of rows) {
