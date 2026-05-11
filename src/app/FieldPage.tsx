@@ -737,9 +737,22 @@ export default function FieldPage() {
             fitBounds={fitBounds}
             myLocation={myLocation}
             onMyLocation={(lat, lon) => setMyLocation({ lat, lon })}
+            betweenMapAndControls={
+              selectedPoint && !pendingPoint ? (
+                <div className="absolute inset-0 z-30 bg-slate-950/60 flex items-end md:items-center justify-center p-0 md:p-6 pointer-events-none">
+                  <div className="pointer-events-auto">
+                    <PointDetail
+                      point={selectedPoint}
+                      onClose={() => setSelectedPoint(null)}
+                      onChanged={() => void reload()}
+                    />
+                  </div>
+                </div>
+              ) : null
+            }
           />
 
-          <div className="absolute bottom-6 left-3 z-20 pointer-events-auto">
+          <div className="absolute bottom-6 left-3 z-40 pointer-events-auto">
             <button
               onClick={() => {
                 setAnnotOpen((v) => {
@@ -1059,7 +1072,7 @@ export default function FieldPage() {
           {/* FAB explicit GPS: nu echivalează cu click pe hartă (evită deschiderea accidentală la explorare). */}
           <button
             onClick={addAtCurrentLocation}
-            className="absolute bottom-6 right-3 z-10 bg-brand-600 hover:bg-brand-700 rounded-full w-14 h-14 shadow-xl text-2xl font-bold flex items-center justify-center"
+            className="absolute bottom-6 right-3 z-40 bg-brand-600 hover:bg-brand-700 rounded-full w-14 h-14 shadow-xl text-2xl font-bold flex items-center justify-center"
             title="Adauga punct la pozitia mea (GPS)"
           >
             +
@@ -1204,17 +1217,6 @@ export default function FieldPage() {
           onSave={(text) => void saveCadLabelEdit(text)}
         />
 
-        {selectedPoint && !pendingPoint && (
-          <div className="absolute inset-0 z-30 bg-slate-950/60 flex items-end md:items-center justify-center p-0 md:p-6 pointer-events-none">
-            <div className="pointer-events-auto">
-              <PointDetail
-                point={selectedPoint}
-                onClose={() => setSelectedPoint(null)}
-                onChanged={() => void reload()}
-              />
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

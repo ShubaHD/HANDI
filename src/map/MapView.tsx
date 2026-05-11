@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import maplibregl, { Map as MlMap, NavigationControl, ScaleControl } from 'maplibre-gl';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
@@ -73,6 +73,11 @@ interface Props {
   myLocation?: { lat: number; lon: number } | null;
   /** Apelat când utilizatorul apasă GPS pe hartă (în plus față de actualizarea marcajului din `myLocation`). */
   onMyLocation?: (lat: number, lon: number) => void;
+  /**
+   * Randat deasupra tile-urilor hărții, dar sub basemap / GPS / zoom (ex. fundal semi-transparent pentru detaliu punct).
+   * Fără asta, un overlay ca frate al lui `main` acoperă tot MapView, inclusiv selectorul de basemap.
+   */
+  betweenMapAndControls?: ReactNode;
 }
 
 export interface ViewportState {
@@ -107,6 +112,7 @@ export function MapView({
   fitBounds,
   myLocation = null,
   onMyLocation,
+  betweenMapAndControls,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -775,6 +781,8 @@ export function MapView({
           />
         </div>
 
+        {betweenMapAndControls}
+
         <div className="absolute top-3 left-3 z-50 flex flex-col gap-2 pointer-events-auto">
           <button
             onClick={() => setShowSwitcher((v) => !v)}
@@ -822,6 +830,7 @@ export function MapView({
         ref={containerRef}
         className={`absolute inset-0${annotationPlacementMode ? ' handi-cursor-annot-placement' : ''}`}
       />
+      {betweenMapAndControls}
       {hover && <MapHoverTooltip x={hover.x} y={hover.y} data={hover.data} />}
 
       {mapDebug && (
@@ -842,7 +851,7 @@ export function MapView({
         </div>
       )}
 
-      <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+      <div className="absolute top-3 left-3 z-50 flex flex-col gap-2 pointer-events-auto">
         <button
           onClick={() => setShowSwitcher((v) => !v)}
           className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-xl shadow-xl px-3 py-2 text-sm font-medium hover:bg-slate-800"
@@ -872,7 +881,7 @@ export function MapView({
       </div>
 
       {drawZoneMode && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-brand-600 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-xl">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-brand-600 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-xl">
           Apasa pe harta ca sa adaugi varfuri. Dublu-click pentru finalizare.
         </div>
       )}
@@ -880,13 +889,13 @@ export function MapView({
       <button
         onClick={locateMe}
         disabled={locating}
-        className="absolute bottom-24 right-3 z-10 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center text-xs font-bold"
+        className="absolute bottom-24 right-3 z-50 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center text-xs font-bold pointer-events-auto"
         title="Pozitia mea"
       >
         {locating ? '...' : 'GPS'}
       </button>
 
-      <div className="absolute bottom-40 right-3 z-10 flex flex-col gap-2">
+      <div className="absolute bottom-40 right-3 z-50 flex flex-col gap-2 pointer-events-auto">
         <button
           onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
           className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 flex items-center justify-center text-lg font-bold"
