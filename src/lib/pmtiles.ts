@@ -194,6 +194,8 @@ function archiveToBaseMap(a: PMTilesArchive): BaseMapDef {
     maxzoom: a.maxzoom ?? 14,
     pmtiles: true,
     pmtilesUrl: url,
+    pmtilesBounds: a.bounds,
+    pmtilesMinZoom: a.minzoom,
   };
 }
 

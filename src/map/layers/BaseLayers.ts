@@ -13,6 +13,10 @@ export interface BaseMapDef {
   /** Daca e setat, sursa va folosi `url: pmtilesUrl` (PMTiles raster), nu `tiles`. */
   pmtiles?: boolean;
   pmtilesUrl?: string;
+  /** West, South, East, North (WGS84) din arhiva PMTiles — pentru fitBounds după încărcare. */
+  pmtilesBounds?: [number, number, number, number] | null;
+  /** Din antetul PMTiles; folosit pe sursa raster ca MapLibre să ceară zoom corect. */
+  pmtilesMinZoom?: number | null;
 }
 
 export const BASE_MAPS: BaseMapDef[] = [
@@ -96,6 +100,8 @@ export function getBaseMapById(id: string | null | undefined): BaseMapDef | null
 
 export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
   if (base.pmtiles && base.pmtilesUrl) {
+    const minz = base.pmtilesMinZoom;
+    const maxz = base.maxzoom;
     return {
       version: 8,
       glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
@@ -105,6 +111,8 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
           url: `pmtiles://${base.pmtilesUrl}`,
           tileSize: 256,
           attribution: base.attribution,
+          ...(typeof minz === 'number' && Number.isFinite(minz) ? { minzoom: minz } : {}),
+          ...(typeof maxz === 'number' && Number.isFinite(maxz) ? { maxzoom: maxz } : {}),
         },
       },
       layers: [

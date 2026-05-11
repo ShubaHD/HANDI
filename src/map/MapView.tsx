@@ -80,6 +80,8 @@ interface Props {
   myLocation?: { lat: number; lon: number } | null;
   /** Apelat când utilizatorul apasă GPS pe hartă (în plus față de actualizarea marcajului din `myLocation`). */
   onMyLocation?: (lat: number, lon: number) => void;
+  /** Pe Leaflet, harta MapLibre nu există — folosește `flyTo` din părinte ca să zbori la coordonatele GPS. */
+  onGpsFlyTo?: (lng: number, lat: number, zoom?: number) => void;
   /**
    * Randat deasupra tile-urilor hărții, dar sub basemap / GPS / zoom (ex. fundal semi-transparent pentru detaliu punct).
    * Fără asta, un overlay ca frate al lui `main` acoperă tot MapView, inclusiv selectorul de basemap.
@@ -123,6 +125,7 @@ export function MapView({
   fitBounds,
   myLocation = null,
   onMyLocation,
+  onGpsFlyTo,
   betweenMapAndControls,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -680,34 +683,52 @@ export function MapView({
     if (!map) return;
 
     let cancelled = false;
-    const runInstall = () => {
-      if (cancelled) return;
-      try {
-        if (!map.isStyleLoaded()) return;
-        ensureInputsEnabled(map);
-        installLayers(map);
-      } catch (e) {
-        console.error('[map] installLayers', e);
-      }
-    };
-
-    const onIdle = () => {
-      if (cancelled) return;
-      map.off('idle', onIdle);
-      runInstall();
-    };
 
     if (skipNextBasemapStyleApplyRef.current) {
       skipNextBasemapStyleApplyRef.current = false;
-      map.once('idle', onIdle);
     } else {
       map.setStyle(base.styleUrl ?? buildBaseStyle(base));
-      map.once('idle', onIdle);
     }
+
+    /** Primul `idle` poate veni înainte ca `isStyleLoaded()` să fie true → fără surse overlay / CAD. */
+    const runInstallWhenStyleReady = () => {
+      let frames = 0;
+      const tick = () => {
+        if (cancelled) return;
+        if (!map.isStyleLoaded()) {
+          frames += 1;
+          if (frames > 240) {
+            console.warn('[MapView] basemap: style nu s-a încărcat la timp; straturi omise');
+            return;
+          }
+          requestAnimationFrame(tick);
+          return;
+        }
+        try {
+          ensureInputsEnabled(map);
+          installLayers(map);
+          const b = base.pmtilesBounds;
+          if (base.pmtiles && Array.isArray(b) && b.length === 4 && b.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+            const maxZ = Math.min(base.maxzoom ?? 18, 19);
+            map.fitBounds(
+              [
+                [b[0], b[1]],
+                [b[2], b[3]],
+              ],
+              { padding: 48, maxZoom: maxZ, duration: 700 },
+            );
+          }
+        } catch (e) {
+          console.error('[map] installLayers', e);
+        }
+      };
+      requestAnimationFrame(tick);
+    };
+
+    runInstallWhenStyleReady();
 
     return () => {
       cancelled = true;
-      map.off('idle', onIdle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
@@ -957,7 +978,10 @@ export function MapView({
   }, [drawZoneMode]);
 
   const locateMe = () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      alert('Geolocation nu este disponibil pe acest device');
+      return;
+    }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -965,15 +989,23 @@ export function MapView({
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         onMyLocation?.(lat, lon);
+        const zoom = 16;
+        if (useLeaflet) {
+          onGpsFlyTo?.(lon, lat, zoom);
+          return;
+        }
         const map = mapRef.current;
         if (!map) return;
         map.flyTo({
           center: [lon, lat],
-          zoom: 16,
+          zoom,
           duration: 1500,
         });
       },
-      () => setLocating(false),
+      (err) => {
+        setLocating(false);
+        alert(err?.message ? `Nu pot obtine pozitia: ${err.message}` : 'Nu pot obtine pozitia (permisiuni GPS?)');
+      },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
@@ -1119,15 +1151,9 @@ export function MapView({
         {locating ? '...' : 'GPS'}
       </button>
 
-      <div className="pointer-events-auto fixed bottom-[calc(10rem+env(safe-area-inset-bottom,0px))] right-3 z-[500] flex flex-col gap-2 md:bottom-40">
+      <div className="pointer-events-auto fixed bottom-[calc(10rem+env(safe-area-inset-bottom,0px))] right-3 z-[500] md:bottom-40">
         <button
-          onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
-          className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 flex items-center justify-center text-lg font-bold"
-          title="Zoom in"
-        >
-          +
-        </button>
-        <button
+          type="button"
           onClick={() => mapRef.current?.zoomOut({ duration: 250 })}
           className="bg-slate-900/95 backdrop-blur border border-slate-700 rounded-full w-12 h-12 shadow-xl hover:bg-slate-800 flex items-center justify-center text-lg font-bold"
           title="Zoom out"

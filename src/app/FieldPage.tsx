@@ -463,7 +463,7 @@ export default function FieldPage() {
       })();
       return;
     }
-    // Punct nou: din tab Puncte („Adaugă punct” → click hartă) sau GPS (buton din listă / FAB).
+    // Punct nou: din tab Puncte („Adaugă punct” → click hartă) sau GPS din listă.
   };
 
   const openAddPointForm = () => {
@@ -1144,6 +1144,7 @@ export default function FieldPage() {
             fitBounds={fitBounds}
             myLocation={myLocation}
             onMyLocation={(lat, lon) => setMyLocation({ lat, lon })}
+            onGpsFlyTo={(lng, lat, zoom) => setFlyTo({ lng, lat, zoom: zoom ?? 16 })}
             betweenMapAndControls={
               selectedPoint && !pendingPoint ? (
                 <div className="absolute inset-0 z-30 bg-slate-950/60 flex items-end md:items-center justify-center p-0 md:p-6 pointer-events-none">
@@ -1158,15 +1159,6 @@ export default function FieldPage() {
               ) : null
             }
           />
-
-          {/* FAB explicit GPS: nu echivalează cu click pe hartă (evită deschiderea accidentală la explorare). */}
-          <button
-            onClick={addAtCurrentLocation}
-            className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom,0px))] right-3 z-[500] flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-2xl font-bold shadow-xl hover:bg-brand-700"
-            title="Adauga punct la pozitia mea (GPS)"
-          >
-            +
-          </button>
 
           {!isSupabaseConfigured && (
             <div className="absolute top-3 right-3 bg-amber-900/90 border border-amber-700 text-amber-100 rounded-xl p-3 max-w-xs text-xs">
