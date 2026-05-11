@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { POINT_TYPES, type PointType, type Visibility } from '@/lib/types';
 import { safeCreatePoint } from '@/lib/db/safeApi';
 import { uploadPhotos } from './photos';
@@ -7,14 +7,24 @@ interface Props {
   initialLat: number;
   initialLon: number;
   initialElevation?: number | null;
+  /** Centrul vizualizării curente pe hartă (din bbox), pentru butonul „Folosește centrul hărții”. */
+  getMapCenter?: () => { lat: number; lon: number } | null;
   onCreated: () => void;
   onCancel: () => void;
+}
+
+function parseCoord(s: string): number | null {
+  const t = s.trim().replace(',', '.');
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function PointForm({
   initialLat,
   initialLon,
   initialElevation,
+  getMapCenter,
   onCreated,
   onCancel,
 }: Props) {
@@ -22,36 +32,97 @@ export function PointForm({
   const [type, setType] = useState<PointType>('cave');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('club');
+  const [latStr, setLatStr] = useState('');
+  const [lonStr, setLonStr] = useState('');
+  const [elevStr, setElevStr] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLatStr(String(initialLat));
+    setLonStr(String(initialLon));
+    setElevStr(
+      initialElevation != null && Number.isFinite(initialElevation)
+        ? String(Math.round(initialElevation))
+        : '',
+    );
+  }, [initialLat, initialLon, initialElevation]);
+
+  const fillFromGps = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation nu este disponibil pe acest dispozitiv');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLatStr(String(pos.coords.latitude));
+        setLonStr(String(pos.coords.longitude));
+        if (pos.coords.altitude != null && Number.isFinite(pos.coords.altitude)) {
+          setElevStr(String(Math.round(pos.coords.altitude)));
+        }
+      },
+      (e) => alert('Nu pot obține poziția: ' + e.message),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
+
+  const fillMapCenter = () => {
+    const c = getMapCenter?.();
+    if (!c) {
+      alert('Deplasează harta puțin ca să se încarce aria vizibilă, apoi încearcă din nou.');
+      return;
+    }
+    setLatStr(String(c.lat));
+    setLonStr(String(c.lon));
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const lat = parseCoord(latStr);
+    const lon = parseCoord(lonStr);
+    if (lat == null || lon == null) {
+      setError('Introdu latitudine și longitudine valide (numere zecimale).');
+      setBusy(false);
+      return;
+    }
+    if (lat < -90 || lat > 90) {
+      setError('Latitudinea trebuie să fie între -90 și 90.');
+      setBusy(false);
+      return;
+    }
+    if (lon < -180 || lon > 180) {
+      setError('Longitudinea trebuie să fie între -180 și 180.');
+      setBusy(false);
+      return;
+    }
+    const elevParsed = elevStr.trim() === '' ? null : parseCoord(elevStr);
+    const elevation_m = elevParsed != null ? elevParsed : null;
+
     try {
       const result = await safeCreatePoint({
         name: name.trim() || `${POINT_TYPES.find((t) => t.value === type)?.label ?? 'Punct'} fara nume`,
         type,
-        lat: initialLat,
-        lon: initialLon,
-        elevation_m: initialElevation ?? null,
+        lat,
+        lon,
+        elevation_m,
         description: description.trim() || null,
         visibility,
       });
       if (result.ok === 'queued') {
         alert('Salvat local. Va sincroniza automat cand revii online.');
-      } else if (files.length > 0) {
+      } else if (result.ok === 'remote' && files.length > 0) {
         try {
           await uploadPhotos(result.data.id, files);
-        } catch (e) {
-          console.warn('[points] upload poze esuat', e);
+        } catch (err) {
+          console.warn('[points] upload poze esuat', err);
         }
       }
       onCreated();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Eroare necunoscuta');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Eroare necunoscuta');
     } finally {
       setBusy(false);
     }
@@ -90,6 +161,61 @@ export function PointForm({
         />
       </label>
 
+      <div>
+        <div className="text-xs uppercase text-slate-400 mb-1">Coordonate (WGS84)</div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[10px] text-slate-500">Latitudine</span>
+            <input
+              value={latStr}
+              onChange={(e) => setLatStr(e.target.value)}
+              inputMode="decimal"
+              autoComplete="off"
+              className="mt-0.5 w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg font-mono text-sm focus:outline-none focus:border-brand-500"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-slate-500">Longitudine</span>
+            <input
+              value={lonStr}
+              onChange={(e) => setLonStr(e.target.value)}
+              inputMode="decimal"
+              autoComplete="off"
+              className="mt-0.5 w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg font-mono text-sm focus:outline-none focus:border-brand-500"
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-2">
+          <button
+            type="button"
+            onClick={fillFromGps}
+            className="text-xs px-2 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700"
+          >
+            Poziția mea (GPS)
+          </button>
+          {getMapCenter && (
+            <button
+              type="button"
+              onClick={fillMapCenter}
+              className="text-xs px-2 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700"
+            >
+              Centrul hărții
+            </button>
+          )}
+        </div>
+      </div>
+
+      <label className="block">
+        <span className="text-xs uppercase text-slate-400">Altitudine (m, opțional)</span>
+        <input
+          value={elevStr}
+          onChange={(e) => setElevStr(e.target.value)}
+          inputMode="decimal"
+          placeholder="ex: 1120"
+          className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg font-mono text-sm focus:outline-none focus:border-brand-500"
+        />
+      </label>
+
       <label className="block">
         <span className="text-xs uppercase text-slate-400">Descriere / note</span>
         <textarea
@@ -100,21 +226,6 @@ export function PointForm({
           className="mt-1 w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-brand-500 resize-none"
         />
       </label>
-
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <div className="px-3 py-2 bg-slate-800 rounded-lg">
-          <div className="text-slate-400">Lat / Lon</div>
-          <div className="font-mono text-slate-200">
-            {initialLat.toFixed(5)}, {initialLon.toFixed(5)}
-          </div>
-        </div>
-        <div className="px-3 py-2 bg-slate-800 rounded-lg">
-          <div className="text-slate-400">Altitudine</div>
-          <div className="font-mono text-slate-200">
-            {initialElevation != null ? `${Math.round(initialElevation)} m` : '-'}
-          </div>
-        </div>
-      </div>
 
       <div>
         <label className="block text-xs uppercase text-slate-400 mb-1">Foto (optional)</label>

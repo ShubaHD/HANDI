@@ -29,7 +29,21 @@ import {
 import { startBackgroundSync } from '@/lib/db/syncQueue';
 import { SyncIndicator } from './SyncIndicator';
 import { CadImportPanel } from '@/features/cad/CadImportPanel';
-import { fetchCadImports, fetchCadLayers, type CadImport, type CadLayerRow } from '@/features/cad/api';
+import {
+  fetchCadImports,
+  fetchCadLayers,
+  updateCadLayer,
+  type CadImport,
+  type CadLayerRow,
+} from '@/features/cad/api';
+import { CadLabelEditSheet } from '@/features/cad/CadLabelEditSheet';
+import {
+  type CadLabelEditTapPayload,
+  cadLabelTextFromProps,
+  ensureCadFeatureCollectionIds,
+  findCadPointLabelFeatureIndex,
+  updateCadPointLabelInCollection,
+} from '@/features/cad/cadFeatureIds';
 import {
   buildRasterUrlOverrides,
   deleteRasterArchive,
@@ -56,6 +70,14 @@ export default function FieldPage() {
   const [rasters, setRasters] = useState<RasterOverlay[]>([]);
   const [cadImports, setCadImports] = useState<CadImport[]>([]);
   const [cadLayers, setCadLayers] = useState<CadLayerRow[]>([]);
+  const [cadLabelEdit, setCadLabelEdit] = useState<{
+    layerRowId: string;
+    featureIndex: number;
+    cadLayerName: string;
+    initialText: string;
+  } | null>(null);
+  const [cadLabelSaving, setCadLabelSaving] = useState(false);
+  const [cadLabelErr, setCadLabelErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,6 +177,61 @@ export default function FieldPage() {
     return stop;
   }, [reload]);
 
+  const handleCadLabelTap = useCallback(
+    (p: CadLabelEditTapPayload) => {
+      const row = cadLayers.find((r) => r.id === p.layerRowId);
+      if (!row) return;
+      const idx = findCadPointLabelFeatureIndex(row.features, {
+        fid: p.featureFid,
+        lon: p.lon,
+        lat: p.lat,
+        eps: 1e-4,
+      });
+      if (idx < 0) return;
+      const feat = row.features.features[idx];
+      const initialText = cadLabelTextFromProps(feat.properties as Record<string, unknown>);
+      setCadLabelErr(null);
+      setCadLabelEdit({
+        layerRowId: p.layerRowId,
+        featureIndex: idx,
+        cadLayerName: row.cad_layer,
+        initialText,
+      });
+    },
+    [cadLayers],
+  );
+
+  const closeCadLabelEdit = useCallback(() => {
+    if (cadLabelSaving) return;
+    setCadLabelEdit(null);
+    setCadLabelErr(null);
+  }, [cadLabelSaving]);
+
+  const saveCadLabelEdit = useCallback(
+    async (text: string) => {
+      if (!cadLabelEdit) return;
+      const row = cadLayers.find((r) => r.id === cadLabelEdit.layerRowId);
+      if (!row) {
+        setCadLabelErr('Stratul CAD nu mai este disponibil.');
+        return;
+      }
+      setCadLabelSaving(true);
+      setCadLabelErr(null);
+      try {
+        const patched = updateCadPointLabelInCollection(row.features, cadLabelEdit.featureIndex, text);
+        const withIds = ensureCadFeatureCollectionIds(patched);
+        await updateCadLayer(row.id, { features: withIds });
+        setCadLabelEdit(null);
+        await reload();
+      } catch (e) {
+        setCadLabelErr(e instanceof Error ? e.message : 'Salvare esuata');
+      } finally {
+        setCadLabelSaving(false);
+      }
+    },
+    [cadLabelEdit, cadLayers, reload],
+  );
+
   const onMapClick = (lng: number, lat: number) => {
     if (drawZoneMode) return;
     if (annotOpen && annotMode !== 'off') {
@@ -218,7 +295,28 @@ export default function FieldPage() {
       })();
       return;
     }
-    setPendingPoint({ lat, lon: lng, elevation: null });
+    // Nu deschidem „Punct nou” la click liber pe hartă — evită conflicte cu CAD / explorare.
+    // Adăugarea se face din tab-ul Puncte sau din FAB-ul GPS (+).
+  };
+
+  const openAddPointForm = () => {
+    if (currentBbox) {
+      setPendingPoint({
+        lat: (currentBbox.minLat + currentBbox.maxLat) / 2,
+        lon: (currentBbox.minLon + currentBbox.maxLon) / 2,
+        elevation: null,
+      });
+    } else {
+      setPendingPoint({ lat: 45.9, lon: 22.9, elevation: null });
+    }
+  };
+
+  const mapCenterForPointForm = (): { lat: number; lon: number } | null => {
+    if (!currentBbox) return null;
+    return {
+      lat: (currentBbox.minLat + currentBbox.maxLat) / 2,
+      lon: (currentBbox.minLon + currentBbox.maxLon) / 2,
+    };
   };
 
   const addAtCurrentLocation = () => {
@@ -343,6 +441,7 @@ export default function FieldPage() {
           {activeTab === 'points' && (
             <PointsList
               points={points}
+              onAddPoint={openAddPointForm}
               onSelect={(p) => {
                 setFlyTo({ lng: p.lon, lat: p.lat, zoom: 16 });
                 setSelectedPoint(p);
@@ -566,6 +665,7 @@ export default function FieldPage() {
               setPendingZone(poly);
             }}
             onMapClick={onMapClick}
+            onCadLabelTap={handleCadLabelTap}
             onPointClick={(id) => {
               const p = points.find((x) => x.id === id);
               if (p) {
@@ -674,11 +774,12 @@ export default function FieldPage() {
             )}
           </div>
 
+          {/* FAB explicit GPS: nu echivalează cu click pe hartă (evită deschiderea accidentală la explorare). */}
           {!drawZoneMode && (
             <button
               onClick={addAtCurrentLocation}
               className="absolute bottom-6 right-3 z-10 bg-brand-600 hover:bg-brand-700 rounded-full w-14 h-14 shadow-xl text-2xl font-bold flex items-center justify-center"
-              title="Adauga punct la pozitia mea"
+              title="Adauga punct la pozitia mea (GPS)"
             >
               +
             </button>
@@ -707,6 +808,7 @@ export default function FieldPage() {
               initialLat={pendingPoint.lat}
               initialLon={pendingPoint.lon}
               initialElevation={pendingPoint.elevation}
+              getMapCenter={mapCenterForPointForm}
               onCreated={() => {
                 setPendingPoint(null);
                 void reload();
@@ -829,6 +931,16 @@ export default function FieldPage() {
             </div>
           </Modal>
         )}
+
+        <CadLabelEditSheet
+          open={Boolean(cadLabelEdit)}
+          cadLayerName={cadLabelEdit?.cadLayerName ?? ''}
+          initialText={cadLabelEdit?.initialText ?? ''}
+          saving={cadLabelSaving}
+          error={cadLabelErr}
+          onClose={closeCadLabelEdit}
+          onSave={(text) => void saveCadLabelEdit(text)}
+        />
 
         {selectedPoint && !pendingPoint && (
           <div className="absolute inset-0 z-30 bg-slate-950/60 flex items-end md:items-center justify-center p-0 md:p-6 pointer-events-none">

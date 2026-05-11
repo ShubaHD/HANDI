@@ -149,3 +149,9 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
 export function getCadLayerPrefix(): string {
   return PREFIX_LAYER;
 }
+
+/** MapLibre layer id `cadlay-{rowUuid}-sym` → `cad_layers.id`. */
+export function cadLayerRowIdFromSymbolLayerId(layerId: string): string | null {
+  if (!layerId.startsWith(PREFIX_LAYER) || !layerId.endsWith('-sym')) return null;
+  return layerId.slice(PREFIX_LAYER.length, -'-sym'.length);
+}

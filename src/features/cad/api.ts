@@ -3,6 +3,7 @@ import type { Visibility } from '@/lib/types';
 import type { CadLayerKind, ClassifiedCadLayer } from './classifyCadLayer';
 import type { FeatureCollection } from 'geojson';
 import { toFeatureCollection } from './classifyCadLayer';
+import { ensureCadFeatureCollectionIds } from './cadFeatureIds';
 
 const BUCKET = 'cad-imports';
 
@@ -153,7 +154,7 @@ export async function uploadCadImport(args: {
       width: ov?.width,
       opacity: ov?.opacity,
     };
-    const fc = toFeatureCollection(l.features);
+    const fc = ensureCadFeatureCollectionIds(toFeatureCollection(l.features));
     return {
       import_id: importRow.id,
       cad_layer: l.cadLayer,
@@ -187,7 +188,7 @@ export async function deleteCadImport(i: CadImport): Promise<void> {
 
 export async function updateCadLayer(
   id: string,
-  patch: Partial<Pick<CadLayerRow, 'kind' | 'style' | 'visible'>>,
+  patch: Partial<Pick<CadLayerRow, 'kind' | 'style' | 'visible' | 'features'>>,
 ): Promise<void> {
   const { error } = await supabase.from('cad_layers').update(patch).eq('id', id);
   if (error) throw error;

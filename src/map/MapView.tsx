@@ -16,7 +16,17 @@ import { addPointsLayer, POINTS_LAYER_ID, updatePointsLayer } from './layers/Poi
 import { addZonesLayer, updateZonesLayer, ZONES_LAYER_ID } from './layers/ZonesLayer';
 import { addTracksLayer, updateLiveTrack, updateTracksLayer } from './layers/TracksLayer';
 import { syncRasterLayers, type RasterLayerState } from './layers/RasterOverlayLayer';
-import { getCadLayerPrefix, updateCadLayersOnMap } from './layers/CadLayersRenderer';
+import {
+  cadLayerRowIdFromSymbolLayerId,
+  getCadLayerPrefix,
+  updateCadLayersOnMap,
+} from './layers/CadLayersRenderer';
+import {
+  CAD_FEATURE_ID_KEY,
+  cadLabelTextFromProps,
+  type CadLabelEditTapPayload,
+} from '@/features/cad/cadFeatureIds';
+import { isJunkCadPlaceholderLabel } from '@/features/cad/cadMapLabels';
 import { addAnnotationsLayer, updateAnnotationsLayer } from './layers/AnnotationsLayer';
 import type { CadLayerRow } from '@/features/cad/api';
 import { BaseMapSwitcher } from './controls/BaseMapSwitcher';
@@ -43,6 +53,8 @@ interface Props {
   onMapClick?: (lng: number, lat: number) => void;
   onPointClick?: (id: string) => void;
   onZoneClick?: (id: string) => void;
+  /** Tap / click on a CAD text label (MapLibre: symbol layer). */
+  onCadLabelTap?: (payload: CadLabelEditTapPayload) => void;
   onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
   flyTo?: { lng: number; lat: number; zoom?: number } | null;
   fitBounds?: [[number, number], [number, number]] | null;
@@ -71,6 +83,7 @@ export function MapView({
   onMapClick,
   onPointClick,
   onZoneClick,
+  onCadLabelTap,
   onBoundsChange,
   flyTo,
   fitBounds,
@@ -126,6 +139,7 @@ export function MapView({
     onMapClick,
     onPointClick,
     onZoneClick,
+    onCadLabelTap,
     onZoneDrawn,
     onBoundsChange,
   });
@@ -133,6 +147,7 @@ export function MapView({
     onMapClick,
     onPointClick,
     onZoneClick,
+    onCadLabelTap,
     onZoneDrawn,
     onBoundsChange,
   };
@@ -349,6 +364,41 @@ export function MapView({
 
     map.on('click', (e) => {
       if (drawRef.current?.enabled) return;
+      const cadSymLayers = (map.getStyle().layers ?? [])
+        .map((l) => l.id)
+        .filter((id) => id.startsWith(getCadLayerPrefix()) && id.endsWith('-sym'));
+      if (cadSymLayers.length > 0) {
+        const { x, y } = e.point;
+        const pad = 24;
+        const cadHits = map.queryRenderedFeatures(
+          [
+            [x - pad, y - pad],
+            [x + pad, y + pad],
+          ],
+          { layers: cadSymLayers as never },
+        );
+        if (cadHits.length > 0) {
+          const f = cadHits[0];
+          const rowId = cadLayerRowIdFromSymbolLayerId(f.layer.id);
+          const props = (f.properties ?? {}) as Record<string, unknown>;
+          const label = cadLabelTextFromProps(props);
+          if (
+            rowId &&
+            label &&
+            !isJunkCadPlaceholderLabel(label) &&
+            f.geometry &&
+            f.geometry.type === 'Point'
+          ) {
+            const [lon, lat] = f.geometry.coordinates;
+            const fid =
+              typeof props[CAD_FEATURE_ID_KEY] === 'string'
+                ? (props[CAD_FEATURE_ID_KEY] as string)
+                : undefined;
+            handlersRef.current.onCadLabelTap?.({ layerRowId: rowId, lon, lat, featureFid: fid });
+            return;
+          }
+        }
+      }
       const features = map.queryRenderedFeatures(e.point, {
         layers: [POINTS_LAYER_ID, ZONES_LAYER_ID],
       });
@@ -654,6 +704,7 @@ export function MapView({
             annotations={annotations}
             cadLayers={cadLayers}
             onMapClick={onMapClick}
+            onCadLabelTap={onCadLabelTap}
             onBoundsChange={onBoundsChange}
             flyTo={flyTo}
             fitBounds={fitBounds}

@@ -4,11 +4,12 @@ import { safeDeletePoint } from '@/lib/db/safeApi';
 
 interface Props {
   points: PointOfInterest[];
+  onAddPoint: () => void;
   onSelect: (p: PointOfInterest) => void;
   onChanged: () => void;
 }
 
-export function PointsList({ points, onSelect, onChanged }: Props) {
+export function PointsList({ points, onAddPoint, onSelect, onChanged }: Props) {
   const [filter, setFilter] = useState<PointType | 'all'>('all');
   const [query, setQuery] = useState('');
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -63,6 +64,13 @@ export function PointsList({ points, onSelect, onChanged }: Props) {
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 border-b border-slate-700 space-y-2">
+        <button
+          type="button"
+          onClick={onAddPoint}
+          className="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium"
+        >
+          Adaugă punct
+        </button>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -108,7 +116,7 @@ export function PointsList({ points, onSelect, onChanged }: Props) {
         {filtered.length === 0 ? (
           <div className="p-6 text-center text-slate-500 text-sm">
             {points.length === 0
-              ? 'Niciun punct inca. Apasa pe harta sau pe butonul + ca sa adaugi unul.'
+              ? 'Niciun punct încă. Apasă „Adaugă punct” de mai sus (coordonate, tip, descriere, foto). Pe hartă poți folosi și + (GPS).'
               : 'Niciun rezultat pentru filtrul curent.'}
           </div>
         ) : (

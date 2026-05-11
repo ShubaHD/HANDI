@@ -6,6 +6,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
 import type { CadLayerRow } from '@/features/cad/api';
+import { CAD_FEATURE_ID_KEY, type CadLabelEditTapPayload } from '@/features/cad/cadFeatureIds';
 import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from '@/features/cad/cadMapLabels';
 
 interface ViewportState {
@@ -47,6 +48,7 @@ interface Props {
   annotations: Annotation[];
   cadLayers: CadLayerRow[];
   onMapClick?: (lng: number, lat: number) => void;
+  onCadLabelTap?: (payload: CadLabelEditTapPayload) => void;
   onBoundsChange?: (b: { minLon: number; minLat: number; maxLon: number; maxLat: number }) => void;
   flyTo?: { lng: number; lat: number; zoom?: number } | null;
   fitBounds?: [[number, number], [number, number]] | null;
@@ -129,6 +131,7 @@ export function LeafletView({
   annotations,
   cadLayers,
   onMapClick,
+  onCadLabelTap,
   onBoundsChange,
   flyTo,
   fitBounds,
@@ -439,12 +442,12 @@ export function LeafletView({
 
           if ((row.kind === 'labels' || row.kind === 'caves') && label && !isJunkCadPlaceholderLabel(label)) {
             const m = L.circleMarker(latlng, {
-              radius: 4,
+              radius: 12,
               color: st.color,
               weight: 1,
               opacity: st.opacity ?? 1,
               fillColor: st.color,
-              fillOpacity: Math.min(0.9, (st.opacity ?? 0.85) * 0.85),
+              fillOpacity: Math.min(0.45, (st.opacity ?? 0.85) * 0.5),
             });
             m.bindTooltip(escapeHtml(label), {
               permanent: true,
@@ -477,6 +480,28 @@ export function LeafletView({
         },
         onEachFeature: (f, lyr) => {
           const props = (f.properties as Record<string, unknown> | null) ?? {};
+          if (
+            f.geometry?.type === 'Point' &&
+            (row.kind === 'labels' || row.kind === 'caves') &&
+            onCadLabelTap
+          ) {
+            const lbl = cadFeatureLabelText(props);
+            if (lbl && !isJunkCadPlaceholderLabel(lbl)) {
+              lyr.on('click', (ev: L.LeafletMouseEvent) => {
+                L.DomEvent.stopPropagation(ev);
+                const fid =
+                  typeof props[CAD_FEATURE_ID_KEY] === 'string'
+                    ? (props[CAD_FEATURE_ID_KEY] as string)
+                    : undefined;
+                onCadLabelTap({
+                  layerRowId: row.id,
+                  lon: ev.latlng.lng,
+                  lat: ev.latlng.lat,
+                  featureFid: fid,
+                });
+              });
+            }
+          }
           const label = cadFeatureLabelText(props);
           const title = (label && !isJunkCadPlaceholderLabel(label) ? label : '') || row.cad_layer;
           if (!title) return;
@@ -492,7 +517,7 @@ export function LeafletView({
     }
     group.addTo(map);
     layersRef.current.cad = group;
-  }, [cadLayers, clearHover, scheduleHover]);
+  }, [cadLayers, clearHover, scheduleHover, onCadLabelTap]);
 
   // viewport controls
   useEffect(() => {
