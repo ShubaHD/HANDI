@@ -39,6 +39,12 @@ export default defineConfig({
         clientsClaim: true,
         skipWaiting: true,
         runtimeCaching: [
+          // CAD layers change after each import; never serve stale Supabase rows from SW cache.
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/rest/v1/cad_layers') || url.pathname.includes('/rest/v1/cad_imports'),
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: ({ url }) =>
               url.hostname.endsWith('tile.opentopomap.org') ||

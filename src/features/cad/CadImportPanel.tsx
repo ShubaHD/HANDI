@@ -376,6 +376,12 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
               </div>
             ) : (
               <ul className="space-y-3">
+                {cadImports.length > 1 && (
+                  <li className="text-[11px] text-amber-200/90 bg-amber-950/40 border border-amber-800/60 rounded-lg px-2 py-1.5">
+                    Mai multe importuri CAD sunt afișate simultan pe hartă. Dacă vezi etichete vechi sau duplicate,
+                    debifează layerele sau șterge importurile DXF pe care nu le mai folosești.
+                  </li>
+                )}
                 {cadImports.map((imp) => {
                   const layers = layersByImport.get(imp.id) ?? [];
                   const bb = bboxFromCadImportBounds(imp.bounds_json);

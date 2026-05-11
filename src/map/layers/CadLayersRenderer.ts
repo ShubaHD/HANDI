@@ -5,6 +5,9 @@ import type { FeatureCollection } from 'geojson';
 const PREFIX_SRC = 'cadsrc-';
 const PREFIX_LAYER = 'cadlay-';
 
+/** MapLibre expression: resolved label string from GeoJSON properties (new + legacy imports). */
+const cadLabelExpr: unknown[] = ['coalesce', ['get', 'dxfText'], ['get', 'text'], ''];
+
 function styleDefaults(row: CadLayerRow): { color: string; width: number; opacity: number } {
   const s = row.style as { color?: string; width?: number; opacity?: number };
   return {
@@ -50,13 +53,12 @@ export function updateCadLayersOnMap(map: MlMap, rows: CadLayerRow[]) {
         filter: [
           'all',
           ['==', ['geometry-type'], 'Point'],
-          ['!=', ['coalesce', ['get', 'text'], ''], ''],
-          // Civil 3D / marker blocks sometimes export placeholder TEXT "Mark" instead of real labels.
-          ['!=', ['get', 'text'], 'Mark'],
+          ['!=', cadLabelExpr, ''],
+          // Civil 3D marker placeholders (any casing / odd Unicode spaces).
+          ['!=', ['downcase', cadLabelExpr], 'mark'],
         ] as never,
         layout: {
-          // Show only real text labels; avoid block names like "Mark".
-          'text-field': ['get', 'text'],
+          'text-field': cadLabelExpr as never,
           'text-size': 13,
           'text-offset': [0, 0.6],
           'text-anchor': 'top',

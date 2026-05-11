@@ -404,13 +404,15 @@ export function LeafletView({
         onEachFeature: (f, lyr) => {
           const props = (f.properties as Record<string, unknown> | null) ?? {};
           const text =
-            typeof props.text === 'string'
-              ? props.text
-              : typeof props.block === 'string'
-                ? props.block
-                : typeof (props as { name?: unknown }).name === 'string'
-                  ? String((props as { name?: unknown }).name)
-                  : '';
+            typeof props.dxfText === 'string'
+              ? props.dxfText
+              : typeof props.text === 'string'
+                ? props.text
+                : typeof props.block === 'string'
+                  ? props.block
+                  : typeof (props as { name?: unknown }).name === 'string'
+                    ? String((props as { name?: unknown }).name)
+                    : '';
           const title = text || row.cad_layer;
           if (!title) return;
           const html = [

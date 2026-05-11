@@ -75,7 +75,10 @@ export function classifyCadImport(layers: CadLayerGroup[]): ClassifiedCadLayer[]
   for (const ll of labelLayers) {
     ll.features = ll.features.map((f) => {
       if (f.geometry?.type !== 'Point') return f;
-      const text = (f.properties?.text as string | undefined) ?? '';
+      const text =
+        (f.properties?.dxfText as string | undefined) ??
+        (f.properties?.text as string | undefined) ??
+        '';
       const pt = point(f.geometry.coordinates as [number, number]);
       let bestKm = Infinity;
       let bestName = '';

@@ -517,10 +517,14 @@ export function parseDxfStereo70Full(
       const raw = String((e.text as string | undefined) ?? '');
       const text = type === 'MTEXT' ? decodeMText(raw) : decodeDxfText(raw);
       if (!pos || !text) return;
+      // Civil 3D / marker blocks often emit placeholder TEXT "Mark" — skip as a label.
+      if (/^mark$/i.test(text.replace(/\u200c|\u200d|\ufeff/g, '').trim())) return;
       const [lon, lat] = toLL(pos);
       push(ln, {
         type: 'Feature',
-        properties: { entity: type, text },
+        // `dxfText`: primary key for map labels (avoids rare `text` key issues in JSON pipelines).
+        // `text` kept for older imports already stored in Supabase.
+        properties: { entity: type, dxfText: text, text },
         geometry: { type: 'Point', coordinates: [lon, lat] } as Point,
       });
       return;
