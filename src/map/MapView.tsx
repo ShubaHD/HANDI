@@ -173,6 +173,8 @@ export function MapView({
 
   /** După încercarea de rehidrat basemap PMTiles din Dexie (evită să rescriem LS cu „default” înainte de rehidrate). */
   const basemapLsHydrateDoneRef = useRef(false);
+  /** Evită `setStyle` imediat după `new Map(...)` cu același basemap — altfel se întrerupe încărcarea și `installLayers` poate rula prea devreme (hartă albastră, fără CAD). */
+  const skipNextBasemapStyleApplyRef = useRef(false);
 
   // Persist basemap selection for both Leaflet and MapLibre modes
   useEffect(() => {
@@ -439,7 +441,8 @@ export function MapView({
 
     map.on('load', () => {
       ensureInputsEnabled(map);
-      installLayers(map);
+      // Straturi (CAD, puncte, …) se instalează în efectul [base] după ce stilul e stabil (idle),
+      // ca să nu se piardă la un setStyle imediat după crearea hărții.
       // Some browsers / PWA + sidebar layouts can initialize with a wrong canvas size.
       // Force a few resizes to ensure the raster base renders.
       safeResize();
@@ -653,6 +656,7 @@ export function MapView({
     map.on('mousemove', onMouseMove);
     map.on('mouseout', onMouseLeave);
 
+    skipNextBasemapStyleApplyRef.current = true;
     mapRef.current = map;
     return () => {
       drawRef.current?.stop();
@@ -674,11 +678,37 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(base.styleUrl ?? buildBaseStyle(base));
-    map.once('styledata', () => {
-      ensureInputsEnabled(map);
-      installLayers(map);
-    });
+
+    let cancelled = false;
+    const runInstall = () => {
+      if (cancelled) return;
+      try {
+        if (!map.isStyleLoaded()) return;
+        ensureInputsEnabled(map);
+        installLayers(map);
+      } catch (e) {
+        console.error('[map] installLayers', e);
+      }
+    };
+
+    const onIdle = () => {
+      if (cancelled) return;
+      map.off('idle', onIdle);
+      runInstall();
+    };
+
+    if (skipNextBasemapStyleApplyRef.current) {
+      skipNextBasemapStyleApplyRef.current = false;
+      map.once('idle', onIdle);
+    } else {
+      map.setStyle(base.styleUrl ?? buildBaseStyle(base));
+      map.once('idle', onIdle);
+    }
+
+    return () => {
+      cancelled = true;
+      map.off('idle', onIdle);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
