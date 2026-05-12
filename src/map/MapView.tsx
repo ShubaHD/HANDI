@@ -98,6 +98,8 @@ export interface ViewportState {
 
 const ROMANIA_CENTER: ViewportState = { lng: 22.9, lat: 45.9, zoom: 6 };
 const BASEMAP_KEY = 'handi-basemap';
+const BASEMAP_OVERLAY_KEY = 'handi-basemap-overlay-id';
+const BASEMAP_OVERLAY_OPACITY_KEY = 'handi-basemap-overlay-opacity';
 
 export function MapView({
   points,
@@ -159,6 +161,9 @@ export function MapView({
       return true;
     }
   });
+  /** PMTiles local peste basemap online (MapLibre). */
+  const [basemapOverlay, setBasemapOverlay] = useState<BaseMapDef | null>(null);
+  const [basemapOverlayOpacity, setBasemapOverlayOpacity] = useState(0.85);
   const [hillshadeOn, setHillshadeOn] = useState(false);
   const [hillshadeStrength, setHillshadeStrength] = useState(0.6);
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -253,6 +258,48 @@ export function MapView({
     })();
   }, []);
 
+  useEffect(() => {
+    if (!basemapReady || useLeaflet) return;
+    void (async () => {
+      try {
+        const oa = localStorage.getItem(BASEMAP_OVERLAY_OPACITY_KEY);
+        if (oa) {
+          const n = parseFloat(oa);
+          if (Number.isFinite(n)) setBasemapOverlayOpacity(Math.min(1, Math.max(0.2, n)));
+        }
+        const savedId = localStorage.getItem(BASEMAP_OVERLAY_KEY);
+        if (!savedId) return;
+        const offline = await buildBaseMapsFromArchives();
+        const found = offline.find((b) => b.id === savedId);
+        if (found) setBasemapOverlay(found);
+        else localStorage.removeItem(BASEMAP_OVERLAY_KEY);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [basemapReady, useLeaflet]);
+
+  useEffect(() => {
+    if (base.pmtiles && base.pmtilesUrl) setBasemapOverlay(null);
+  }, [base.id, base.pmtiles, base.pmtilesUrl]);
+
+  useEffect(() => {
+    try {
+      if (!basemapOverlay) localStorage.removeItem(BASEMAP_OVERLAY_KEY);
+      else localStorage.setItem(BASEMAP_OVERLAY_KEY, basemapOverlay.id);
+    } catch {
+      /* ignore */
+    }
+  }, [basemapOverlay]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BASEMAP_OVERLAY_OPACITY_KEY, String(basemapOverlayOpacity));
+    } catch {
+      /* ignore */
+    }
+  }, [basemapOverlayOpacity]);
+
   const cadLayersRef = useRef(cadLayers);
   cadLayersRef.current = cadLayers;
 
@@ -333,7 +380,9 @@ export function MapView({
     const last = readLastViewport();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: base.styleUrl ?? buildBaseStyle(base),
+      style:
+        base.styleUrl ??
+        buildBaseStyle(base, { overlay: basemapOverlay, overlayOpacity: basemapOverlayOpacity }),
       center: [last.lng, last.lat],
       zoom: last.zoom,
       attributionControl: { compact: true },
@@ -720,7 +769,10 @@ export function MapView({
     if (skipNextBasemapStyleApplyRef.current) {
       skipNextBasemapStyleApplyRef.current = false;
     } else {
-      map.setStyle(base.styleUrl ?? buildBaseStyle(base));
+      map.setStyle(
+        base.styleUrl ??
+          buildBaseStyle(base, { overlay: basemapOverlay, overlayOpacity: basemapOverlayOpacity }),
+      );
     }
 
     /**
@@ -787,7 +839,7 @@ export function MapView({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base]);
+  }, [base, basemapOverlay, basemapOverlayOpacity]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1128,6 +1180,7 @@ export function MapView({
                 setBase(b);
                 setShowSwitcher(false);
               }}
+              enablePmtilesOverlay={false}
             />
           )}
         </div>
@@ -1196,6 +1249,11 @@ export function MapView({
               setBase(b);
               setShowSwitcher(false);
             }}
+            enablePmtilesOverlay={!(base.pmtiles && base.pmtilesUrl)}
+            basemapOverlay={basemapOverlay}
+            onBasemapOverlayChange={setBasemapOverlay}
+            basemapOverlayOpacity={basemapOverlayOpacity}
+            onBasemapOverlayOpacityChange={setBasemapOverlayOpacity}
           />
         )}
       </div>

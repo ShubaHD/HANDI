@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "verify:pmtiles": "node scripts/verify-pmtiles.mjs",
+    "verify:offline-pmtiles-workflow": "node scripts/sureanu-pmtiles-workflow.mjs",
     "generate-pwa-assets": "pwa-assets-generator"
   },
   "keywords": [

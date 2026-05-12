@@ -37,15 +37,21 @@ import {
   type CadImport,
   type CadLayerRow,
 } from '@/features/cad/api';
-import { CadLabelEditSheet } from '@/features/cad/CadLabelEditSheet';
+import { CadLabelEditSheet, type CadLabelSavePayload } from '@/features/cad/CadLabelEditSheet';
 import { cadLabelLockedFromStyle } from '@/features/cad/cadLayerLabelStyle';
+import { deleteCadLabelPhotoStorage, uploadCadLabelPhoto } from '@/features/cad/cadLabelPhotos';
 import {
+  CAD_FEATURE_ID_KEY,
   type CadLabelEditTapPayload,
+  type CadLabelPhotoPatch,
+  cadLabelHandiDescriptionFromProps,
+  cadLabelHandiPhotoPathFromProps,
+  cadLabelHandiPhotoUrlFromProps,
   cadLabelTextFromProps,
   ensureCadFeatureCollectionIds,
   findCadPointLabelFeatureIndex,
+  patchCadLabelFeatureMetadata,
   removeCadFeatureAtIndex,
-  updateCadPointLabelInCollection,
 } from '@/features/cad/cadFeatureIds';
 import {
   buildRasterUrlOverrides,
@@ -86,6 +92,9 @@ export default function FieldPage() {
     featureIndex: number;
     cadLayerName: string;
     initialText: string;
+    initialDescription: string;
+    initialPhotoUrl: string | null;
+    initialPhotoPath: string | null;
   } | null>(null);
   const [cadLabelSaving, setCadLabelSaving] = useState(false);
   const [cadLabelErr, setCadLabelErr] = useState<string | null>(null);
@@ -121,7 +130,7 @@ export default function FieldPage() {
 
   const myRecentAnnotations = useMemo(
     () => (!user?.id ? [] : annotations.filter((a) => a.owner_id === user.id).slice(0, 40)),
-    [annotations, user?.id],
+    [annotations, user],
   );
 
   const [liveTrack, setLiveTrack] = useState<[number, number][]>([]);
@@ -235,13 +244,17 @@ export default function FieldPage() {
       });
       if (idx < 0) return;
       const feat = row.features.features[idx];
-      const initialText = cadLabelTextFromProps(feat.properties as Record<string, unknown>);
+      const props = feat.properties as Record<string, unknown>;
+      const initialText = cadLabelTextFromProps(props);
       setCadLabelErr(null);
       setCadLabelEdit({
         layerRowId: p.layerRowId,
         featureIndex: idx,
         cadLayerName: row.cad_layer,
         initialText,
+        initialDescription: cadLabelHandiDescriptionFromProps(props).trim(),
+        initialPhotoUrl: cadLabelHandiPhotoUrlFromProps(props),
+        initialPhotoPath: cadLabelHandiPhotoPathFromProps(props),
       });
     },
     [cadLayers],
@@ -254,19 +267,60 @@ export default function FieldPage() {
   }, [cadLabelSaving]);
 
   const saveCadLabelEdit = useCallback(
-    async (text: string) => {
+    async (payload: CadLabelSavePayload) => {
       if (!cadLabelEdit) return;
       const row = cadLayers.find((r) => r.id === cadLabelEdit.layerRowId);
       if (!row) {
         setCadLabelErr('Stratul CAD nu mai este disponibil.');
         return;
       }
+      if (!payload.text.trim()) {
+        setCadLabelErr('Introdu textul etichetei (numele pe hartă).');
+        return;
+      }
+      if (payload.photoFile && !isSupabaseConfigured) {
+        setCadLabelErr('Încărcarea pozelor necesită Supabase.');
+        return;
+      }
       setCadLabelSaving(true);
       setCadLabelErr(null);
       try {
-        const patched = updateCadPointLabelInCollection(row.features, cadLabelEdit.featureIndex, text);
-        const withIds = ensureCadFeatureCollectionIds(patched);
-        await updateCadLayer(row.id, { features: withIds });
+        const fc0 = ensureCadFeatureCollectionIds(structuredClone(row.features));
+        const idx = cadLabelEdit.featureIndex;
+        if (idx < 0 || idx >= fc0.features.length) {
+          setCadLabelErr('Eticheta nu mai există pe acest strat.');
+          return;
+        }
+        const p0 = (fc0.features[idx].properties ?? {}) as Record<string, unknown>;
+        const oldPath = cadLabelHandiPhotoPathFromProps(p0);
+        const fid = typeof p0[CAD_FEATURE_ID_KEY] === 'string' ? (p0[CAD_FEATURE_ID_KEY] as string) : '';
+        if (!fid) {
+          setCadLabelErr('Lipsește identificatorul intern; reîncarcă pagina și încearcă din nou.');
+          return;
+        }
+
+        let photo: CadLabelPhotoPatch = 'keep';
+        if (payload.removePhoto) {
+          if (oldPath) await deleteCadLabelPhotoStorage(oldPath);
+          photo = 'remove';
+        } else if (payload.photoFile) {
+          const up = await uploadCadLabelPhoto({
+            cadLayerRowId: row.id,
+            featureFid: fid,
+            file: payload.photoFile,
+          });
+          if (oldPath && oldPath !== up.storagePath) {
+            await deleteCadLabelPhotoStorage(oldPath).catch(() => {});
+          }
+          photo = { url: up.publicUrl, path: up.storagePath };
+        }
+
+        const patched = patchCadLabelFeatureMetadata(fc0, idx, {
+          text: payload.text,
+          description: payload.description,
+          photo,
+        });
+        await updateCadLayer(row.id, { features: patched });
         setCadLabelEdit(null);
         await reload();
       } catch (e) {
@@ -289,6 +343,9 @@ export default function FieldPage() {
     setCadLabelSaving(true);
     setCadLabelErr(null);
     try {
+      const feat = row.features.features[cadLabelEdit.featureIndex];
+      const ph = cadLabelHandiPhotoPathFromProps((feat?.properties ?? {}) as Record<string, unknown>);
+      if (ph) await deleteCadLabelPhotoStorage(ph).catch(() => {});
       const patched = removeCadFeatureAtIndex(row.features, cadLabelEdit.featureIndex);
       const withIds = ensureCadFeatureCollectionIds(patched);
       await updateCadLayer(row.id, { features: withIds });
@@ -1312,10 +1369,13 @@ export default function FieldPage() {
           open={Boolean(cadLabelEdit)}
           cadLayerName={cadLabelEdit?.cadLayerName ?? ''}
           initialText={cadLabelEdit?.initialText ?? ''}
+          initialDescription={cadLabelEdit?.initialDescription ?? ''}
+          initialPhotoUrl={cadLabelEdit?.initialPhotoUrl ?? null}
+          photoUploadAvailable={isSupabaseConfigured}
           saving={cadLabelSaving}
           error={cadLabelErr}
           onClose={closeCadLabelEdit}
-          onSave={(text) => void saveCadLabelEdit(text)}
+          onSave={(p) => void saveCadLabelEdit(p)}
           onDelete={() => void deleteCadLabelEdit()}
         />
 

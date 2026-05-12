@@ -56,6 +56,7 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
     if (name === 'QuotaExceededError') {
       throw new Error(
         'Spatiu IndexedDB insuficient. Sterge alte harti offline sau micsoreaza fisierul.',
+        { cause: e },
       );
     }
     throw e;
@@ -156,6 +157,7 @@ export async function saveRemoteRasterArchive(args: {
     if (name === 'QuotaExceededError') {
       throw new Error(
         'Spatiu IndexedDB insuficient pentru acest PMTiles. Micsoreaza fisierul sau elibereaza spatiu in browser.',
+        { cause: e },
       );
     }
     throw e;
@@ -221,6 +223,7 @@ export async function saveGeneratedBasemapBlob(blob: Blob, name: string): Promis
     if (name === 'QuotaExceededError') {
       throw new Error(
         'Spatiu IndexedDB insuficient. Sterge alte harti offline sau micsoreaza pachetul.',
+        { cause: e },
       );
     }
     throw e;

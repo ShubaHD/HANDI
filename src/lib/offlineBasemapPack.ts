@@ -1,10 +1,9 @@
 import { TileType, zxyToTileId } from 'pmtiles';
 import type { BaseMapDef } from '@/map/layers/BaseLayers';
+import { getBaseMapById } from '@/map/layers/BaseLayers';
 import { buildRasterPmtilesBlob, sniffRasterTileType, type RasterTileBlob } from '@/lib/pmtilesRasterWriter';
 
-export type OfflinePackSourceId = 'opentopomap' | 'esri-sat';
-
-const OTM_HOSTS = ['a', 'b', 'c'] as const;
+export type OfflinePackSourceId = 'opentopomap' | 'esri-sat' | 'carto-voyager' | 'cyclosm';
 
 export interface BBoxLonLat {
   minLon: number;
@@ -58,22 +57,54 @@ export function countPackTiles(bbox: BBoxLonLat, minZoom: number, maxZoom: numbe
   return n;
 }
 
-function packUrlForOtm(z: number, x: number, y: number, hostIdx: number): string {
-  const h = OTM_HOSTS[hostIdx % OTM_HOSTS.length];
-  return `https://${h}.tile.opentopomap.org/${z}/${x}/${y}.png`;
+/** Aceleași șabloane ca în BASE_MAPS; Esri folosește TMS (y inversat). */
+function packUrlForSource(
+  source: OfflinePackSourceId,
+  z: number,
+  x: number,
+  y: number,
+  hostIdx: number,
+): string {
+  if (source === 'esri-sat') {
+    const n = 1 << z;
+    const yTms = n - 1 - y;
+    return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${yTms}/${x}`;
+  }
+  const def = getBaseMapById(source);
+  if (!def?.tileUrls?.length) {
+    throw new Error(`Sursă pack necunoscută: ${source}`);
+  }
+  const tpl = def.tileUrls[hostIdx % def.tileUrls.length];
+  return tpl.replace(/\{z\}/g, String(z)).replace(/\{x\}/g, String(x)).replace(/\{y\}/g, String(y));
 }
 
-function packUrlForEsri(z: number, x: number, y: number): string {
-  const n = 1 << z;
-  const yTms = n - 1 - y;
-  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${yTms}/${x}`;
+export interface FetchTileResult {
+  bytes: Uint8Array | null;
+  /** Motiv scurt pentru diagnostic (HTTP, CORS, rețea). */
+  detail?: string;
 }
 
-async function fetchTileBytes(url: string, signal?: AbortSignal): Promise<Uint8Array | null> {
-  const res = await fetch(url, { signal, mode: 'cors', cache: 'no-store' });
-  if (!res.ok) return null;
-  const buf = await res.arrayBuffer();
-  return new Uint8Array(buf);
+async function fetchTileBytes(url: string, signal?: AbortSignal): Promise<FetchTileResult> {
+  try {
+    const res = await fetch(url, { signal, mode: 'cors', cache: 'no-store' });
+    if (!res.ok) {
+      return {
+        bytes: null,
+        detail: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}`,
+      };
+    }
+    const buf = await res.arrayBuffer();
+    return { bytes: new Uint8Array(buf) };
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    const msg =
+      e instanceof TypeError
+        ? 'CORS sau rețea (fetch blocat)'
+        : e instanceof Error
+          ? e.message
+          : String(e);
+    return { bytes: null, detail: msg };
+  }
 }
 
 const DEFAULT_CONCURRENCY = 5;
@@ -116,18 +147,12 @@ export function baseMapMetaForPack(source: OfflinePackSourceId): Pick<
   BaseMapDef,
   'label' | 'attribution' | 'maxzoom'
 > {
-  if (source === 'opentopomap') {
-    return {
-      label: 'OpenTopoMap',
-      attribution:
-        'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
-      maxzoom: 17,
-    };
-  }
+  const def = getBaseMapById(source);
+  if (!def) throw new Error(`Sursă pack necunoscută: ${source}`);
   return {
-    label: 'Satelit Esri',
-    attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    maxzoom: 19,
+    label: def.label,
+    attribution: def.attribution,
+    maxzoom: def.maxzoom,
   };
 }
 
@@ -139,6 +164,11 @@ export interface BuildOfflineBasemapPackArgs {
   name: string;
   signal?: AbortSignal;
   onProgress?: (p: OfflinePackProgress) => void;
+}
+
+function bumpFail(map: Map<string, number>, detail: string | undefined) {
+  const k = detail?.trim() || 'necunoscut';
+  map.set(k, (map.get(k) ?? 0) + 1);
 }
 
 /**
@@ -155,20 +185,22 @@ export async function buildOfflineBasemapPackBlob(args: BuildOfflineBasemapPackA
   const coords: { z: number; x: number; y: number }[] = [];
   for (let z = minZoom; z <= maxZoom; z++) coords.push(...tilesCoveringBBox(bbox, z));
   if (coords.length > MAX_TILES) {
-    throw new Error(`Prea multe tile-uri (~${coords.length}). Ridica min zoom, coboara max zoom sau micsoreaza zona pe harta (limita ${MAX_TILES}).`);
+    throw new Error(
+      `Prea multe tile-uri (~${coords.length}). Ridica min zoom, coboara max zoom sau micsoreaza zona pe harta (limita ${MAX_TILES}).`,
+    );
   }
 
   onProgress?.({ phase: 'fetching', loaded: 0, total: coords.length });
+
+  const failReasons = new Map<string, number>();
 
   const blobs = await runPool(
     coords,
     DEFAULT_CONCURRENCY,
     async (c, i) => {
-      const url =
-        source === 'opentopomap'
-          ? packUrlForOtm(c.z, c.x, c.y, i)
-          : packUrlForEsri(c.z, c.x, c.y);
-      const bytes = await fetchTileBytes(url, signal);
+      const url = packUrlForSource(source, c.z, c.x, c.y, i);
+      const { bytes, detail } = await fetchTileBytes(url, signal);
+      if (!bytes || bytes.byteLength < 8) bumpFail(failReasons, detail);
       return { c, bytes };
     },
     (loaded, total) => onProgress?.({ phase: 'fetching', loaded, total }),
@@ -182,10 +214,17 @@ export async function buildOfflineBasemapPackBlob(args: BuildOfflineBasemapPackA
     if (sniffed === TileType.Unknown) sniffed = sniffRasterTileType(row.bytes);
     tiles.push({ tileId, data: row.bytes });
   }
-  if (tiles.length === 0) throw new Error('Niciun tile descarcat (CORS sau rețea). Incearca alt browser sau ?maplibre=1 online intai.');
+  if (tiles.length === 0) {
+    const ranked = [...failReasons.entries()].sort((a, b) => b[1] - a[1]);
+    const top = ranked[0];
+    const hint = top ? `Cel mai frecvent: „${top[0]}” (${top[1]} tile-uri). ` : '';
+    throw new Error(
+      `${hint}Niciun tile descarcat. Incearca sursa „Carto Voyager”, alt browser, sau genereaza PMTiles pe desktop si importa fisierul.`,
+    );
+  }
 
   const tileType =
-    sniffed === TileType.Unknown ? (source === 'opentopomap' ? TileType.Png : TileType.Jpeg) : sniffed;
+    sniffed === TileType.Unknown ? (source === 'esri-sat' ? TileType.Jpeg : TileType.Png) : sniffed;
 
   onProgress?.({ phase: 'building', loaded: tiles.length, total: tiles.length, message: 'Scriu PMTiles…' });
 

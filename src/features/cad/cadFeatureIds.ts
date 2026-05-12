@@ -4,6 +4,26 @@ import { normalizeCadMapLabelString } from './cadMapLabels';
 /** Stable id for picking / updating CAD GeoJSON features (client-side). */
 export const CAD_FEATURE_ID_KEY = '_fid' as const;
 
+/** Metadate teren (nu vin din DXF); persistă în `cad_layers.features` GeoJSON. */
+export const HANDI_CAD_DESC_KEY = 'handi_description' as const;
+export const HANDI_CAD_PHOTO_URL_KEY = 'handi_photo_url' as const;
+export const HANDI_CAD_PHOTO_PATH_KEY = 'handi_photo_path' as const;
+
+export function cadLabelHandiDescriptionFromProps(p: Record<string, unknown> | null | undefined): string {
+  const v = p?.[HANDI_CAD_DESC_KEY];
+  return typeof v === 'string' ? v : '';
+}
+
+export function cadLabelHandiPhotoUrlFromProps(p: Record<string, unknown> | null | undefined): string | null {
+  const v = p?.[HANDI_CAD_PHOTO_URL_KEY];
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+}
+
+export function cadLabelHandiPhotoPathFromProps(p: Record<string, unknown> | null | undefined): string | null {
+  const v = p?.[HANDI_CAD_PHOTO_PATH_KEY];
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+}
+
 export type CadLabelEditTapPayload = {
   layerRowId: string;
   lon: number;
@@ -62,18 +82,37 @@ export function findCadPointLabelFeatureIndex(
   });
 }
 
-export function updateCadPointLabelInCollection(
+export type CadLabelPhotoPatch = 'keep' | 'remove' | { url: string; path: string };
+
+/** Actualizează textul etichetei + descriere / poză (URL + path storage). */
+export function patchCadLabelFeatureMetadata(
   fc: FeatureCollection,
   index: number,
-  newText: string,
+  parts: {
+    text: string;
+    description: string;
+    photo: CadLabelPhotoPatch;
+  },
 ): FeatureCollection {
   if (index < 0 || index >= fc.features.length) return fc;
   const features = fc.features.map((f, i) => {
     if (i !== index) return f;
     const p = { ...(f.properties as Record<string, unknown> | null) } as Record<string, unknown>;
-    p.cad_label = newText;
-    p.dxfText = newText;
-    p.text = newText;
+    const t = parts.text.trim();
+    p.cad_label = t;
+    p.dxfText = t;
+    p.text = t;
+    const d = parts.description.trim();
+    if (d) p[HANDI_CAD_DESC_KEY] = d;
+    else delete p[HANDI_CAD_DESC_KEY];
+
+    if (parts.photo === 'remove') {
+      delete p[HANDI_CAD_PHOTO_URL_KEY];
+      delete p[HANDI_CAD_PHOTO_PATH_KEY];
+    } else if (parts.photo !== 'keep' && typeof parts.photo === 'object') {
+      p[HANDI_CAD_PHOTO_URL_KEY] = parts.photo.url;
+      p[HANDI_CAD_PHOTO_PATH_KEY] = parts.photo.path;
+    }
     return { ...f, properties: p };
   });
   return { ...fc, features };

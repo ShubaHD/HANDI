@@ -32,6 +32,12 @@ interface Props {
   viewportZoom?: number;
   /** După generare: selectează noul basemap offline. */
   onOfflinePackComplete?: (b: BaseMapDef) => void;
+  /** Doar MapLibre: PMTiles peste basemap online. */
+  enablePmtilesOverlay?: boolean;
+  basemapOverlay?: BaseMapDef | null;
+  onBasemapOverlayChange?: (b: BaseMapDef | null) => void;
+  basemapOverlayOpacity?: number;
+  onBasemapOverlayOpacityChange?: (v: number) => void;
 }
 
 export function BaseMapSwitcher({
@@ -44,6 +50,11 @@ export function BaseMapSwitcher({
   viewportBbox = null,
   viewportZoom,
   onOfflinePackComplete,
+  enablePmtilesOverlay = true,
+  basemapOverlay = null,
+  onBasemapOverlayChange,
+  basemapOverlayOpacity = 0.85,
+  onBasemapOverlayOpacityChange,
 }: Props) {
   const ask = useAppConfirm();
   const [offlineBases, setOfflineBases] = useState<BaseMapDef[]>([]);
@@ -51,7 +62,7 @@ export function BaseMapSwitcher({
   const [error, setError] = useState<string | null>(null);
 
   const [packOpen, setPackOpen] = useState(false);
-  const [packSource, setPackSource] = useState<OfflinePackSourceId>('opentopomap');
+  const [packSource, setPackSource] = useState<OfflinePackSourceId>('carto-voyager');
   const [packMinZ, setPackMinZ] = useState(12);
   const [packMaxZ, setPackMaxZ] = useState(15);
   const [packName, setPackName] = useState('Zona');
@@ -86,7 +97,14 @@ export function BaseMapSwitcher({
     const meta = baseMapMetaForPack(packSource);
     setPackMinZ(Math.max(0, z - 2));
     setPackMaxZ(Math.min(meta.maxzoom, z + 1));
-    const tag = packSource === 'opentopomap' ? 'OTM' : 'Esri';
+    const tag =
+      packSource === 'opentopomap'
+        ? 'OTM'
+        : packSource === 'esri-sat'
+          ? 'Esri'
+          : packSource === 'cyclosm'
+            ? 'CyclOSM'
+            : 'Carto';
     setPackName(`${tag}-${new Date().toISOString().slice(0, 10)}`);
   }, [packOpen, viewportBbox, viewportZoom, packSource]);
 
@@ -186,11 +204,13 @@ export function BaseMapSwitcher({
         {packOpen && (
           <div className="mt-2 space-y-2 text-xs">
             <p className="text-slate-500 leading-snug">
-              Descarca tile-uri pentru dreptunghiul curent al hartii (OpenTopoMap sau Esri), apoi salveaza ca
-              PMTiles local. Respecta termenii furnizorilor. PMTiles ruleaza doar in{' '}
-              <span className="text-slate-300">MapLibre</span> — dupa „Genereaza & salveaza” aplicatia comuta
-              automat la MapLibre si selecteaza noul basemap. Ramai zoomat in zona pachetului ca sa vezi
-              tile-urile.
+              Descarca tile-uri pentru dreptunghiul curent (Carto / CyclOSM / OpenTopoMap / Esri), apoi salveaza
+              ca PMTiles local. Daca OTM sau Esri esueaza (CORS), incearca Carto. Pentru zone mari sau politici
+              stricte: genereaza PMTiles pe PC (vezi{' '}
+              <code className="text-slate-300">npm run verify:offline-pmtiles-workflow</code>
+              ) si importa .pmtiles mai jos. PMTiles e doar in{' '}
+              <span className="text-slate-300">MapLibre</span> — dupa „Genereaza & salveaza” comutam la MapLibre
+              si selectam noul basemap.
             </p>
             {!viewportBbox ? (
               <div className="text-amber-200/90">Nu avem inca bbox — misca harta putin.</div>
@@ -207,6 +227,8 @@ export function BaseMapSwitcher({
                 className="mt-1 w-full rounded-lg bg-slate-800 border border-slate-600 px-2 py-1.5 text-slate-100"
                 disabled={packing}
               >
+                <option value="carto-voyager">Carto Voyager (recomandat, max z20)</option>
+                <option value="cyclosm">CyclOSM (max z18)</option>
                 <option value="opentopomap">OpenTopoMap (max z17)</option>
                 <option value="esri-sat">Satelit Esri (max z19)</option>
               </select>
@@ -277,6 +299,58 @@ export function BaseMapSwitcher({
           </div>
         )}
       </div>
+
+      {enablePmtilesOverlay && onBasemapOverlayChange && !current.startsWith('pmtiles-') && (
+        <div className="mt-4 border-t border-slate-700 pt-3 space-y-2">
+          <h3 className="text-xs font-semibold uppercase text-slate-400">Strat offline peste harta</h3>
+          <p className="text-slate-500 text-[11px] leading-snug">
+            Afiseaza un PMTiles salvat mai sus peste basemap-ul online (ex. Sureanu peste Carto), cu opacitate
+            reglabila. Straturile CAD raman deasupra.
+          </p>
+          <label className="block text-slate-400 text-xs">
+            Pachet PMTiles
+            <select
+              value={basemapOverlay?.id ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) {
+                  onBasemapOverlayChange(null);
+                  return;
+                }
+                const pick =
+                  offlineBases.find((b) => b.id === v) ??
+                  (basemapOverlay?.id === v ? basemapOverlay : null);
+                onBasemapOverlayChange(pick);
+              }}
+              className="mt-1 w-full rounded-lg bg-slate-800 border border-slate-600 px-2 py-1.5 text-slate-100"
+            >
+              <option value="">Fara</option>
+              {basemapOverlay && !offlineBases.some((b) => b.id === basemapOverlay.id) && (
+                <option value={basemapOverlay.id}>{basemapOverlay.label}</option>
+              )}
+              {offlineBases.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {basemapOverlay && onBasemapOverlayOpacityChange && (
+            <label className="block text-slate-400 text-xs">
+              Opacitate strat: {basemapOverlayOpacity.toFixed(2)}
+              <input
+                type="range"
+                min={0.2}
+                max={1}
+                step={0.05}
+                value={basemapOverlayOpacity}
+                onChange={(e) => onBasemapOverlayOpacityChange(parseFloat(e.target.value))}
+                className="w-full accent-brand-500 mt-1"
+              />
+            </label>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center justify-between mt-4 mb-2">
         <h3 className="text-xs font-semibold uppercase text-slate-400">Harta offline (PMTiles)</h3>

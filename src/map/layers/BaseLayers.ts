@@ -99,7 +99,13 @@ export function getBaseMapById(id: string | null | undefined): BaseMapDef | null
   return BASE_MAPS.find((b) => b.id === id) ?? null;
 }
 
-export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
+export interface BuildBaseStyleOptions {
+  /** PMTiles local peste basemap-ul online (ignorat dacă `base` e deja PMTiles). */
+  overlay?: BaseMapDef | null;
+  overlayOpacity?: number;
+}
+
+export function buildBaseStyle(base: BaseMapDef, options?: BuildBaseStyleOptions): StyleSpecification {
   if (base.pmtiles && base.pmtilesUrl) {
     const minz = base.pmtilesMinZoom;
     const maxz = base.maxzoom;
@@ -126,6 +132,58 @@ export function buildBaseStyle(base: BaseMapDef): StyleSpecification {
           id: 'base-layer',
           type: 'raster',
           source: 'base',
+        },
+      ],
+    };
+  }
+
+  const ov = options?.overlay;
+  const hasOverlay = Boolean(ov?.pmtiles && ov.pmtilesUrl);
+  const overlayOpacityRaw = options?.overlayOpacity;
+  const overlayOpacity =
+    typeof overlayOpacityRaw === 'number' && Number.isFinite(overlayOpacityRaw)
+      ? Math.min(1, Math.max(0, overlayOpacityRaw))
+      : 0.85;
+
+  if (hasOverlay && ov) {
+    const minzO = ov.pmtilesMinZoom;
+    const maxzO = ov.maxzoom;
+    return {
+      version: 8,
+      glyphs: getMapGlyphsUrl(),
+      sources: {
+        base: {
+          type: 'raster',
+          tiles: base.tileUrls,
+          tileSize: 256,
+          maxzoom: base.maxzoom,
+          attribution: base.attribution,
+        },
+        basemapPmtilesOverlay: {
+          type: 'raster',
+          url: `pmtiles://${ov.pmtilesUrl}`,
+          tileSize: 256,
+          attribution: ov.attribution,
+          ...(typeof minzO === 'number' && Number.isFinite(minzO) ? { minzoom: minzO } : {}),
+          ...(typeof maxzO === 'number' && Number.isFinite(maxzO) ? { maxzoom: maxzO } : {}),
+        },
+      },
+      layers: [
+        {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': '#0f172a' },
+        },
+        {
+          id: 'base-layer',
+          type: 'raster',
+          source: 'base',
+        },
+        {
+          id: 'basemap-pmtiles-overlay',
+          type: 'raster',
+          source: 'basemapPmtilesOverlay',
+          paint: { 'raster-opacity': overlayOpacity },
         },
       ],
     };
