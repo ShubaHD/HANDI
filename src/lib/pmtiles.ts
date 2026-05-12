@@ -182,15 +182,42 @@ export async function buildRasterUrlOverrides(): Promise<Record<string, string>>
 
 export async function buildBaseMapsFromArchives(): Promise<BaseMapDef[]> {
   const archs = await listLocalArchives();
+  for (const a of archs) {
+    const eff = effectiveArchiveBytes(a);
+    if (eff > 0 && a.size !== eff) {
+      try {
+        await db.pmtiles.update(a.key, { size: eff });
+        Object.assign(a, { size: eff });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
   return archs.map((a) => archiveToBaseMap(a));
+}
+
+/** Unele înregistrări au `size` 0 în DB dar `blob.size` corect (sau invers); folosim maximul. */
+function effectiveArchiveBytes(a: PMTilesArchive): number {
+  const n = typeof a.size === 'number' && Number.isFinite(a.size) ? a.size : 0;
+  const b = a.blob instanceof Blob && Number.isFinite(a.blob.size) ? a.blob.size : 0;
+  return Math.max(n, b, 0);
+}
+
+function formatArchiveSizeBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb < 10 ? mb.toFixed(2) : mb.toFixed(1)} MB`;
 }
 
 function archiveToBaseMap(a: PMTilesArchive): BaseMapDef {
   const url = archiveBlobUrl(a);
+  const bytes = effectiveArchiveBytes(a);
   return {
     id: `pmtiles-${a.key}`,
     label: `Offline: ${a.name}`,
-    description: `${(a.size / 1024 / 1024).toFixed(0)} MB - PMTiles local (zoom ${a.minzoom ?? '?'}-${a.maxzoom ?? '?'})`,
+    description: `${formatArchiveSizeBytes(bytes)} - PMTiles local (zoom ${a.minzoom ?? '?'}-${a.maxzoom ?? '?'})`,
     attribution: '© OpenStreetMap contributors / PMTiles',
     tileUrls: [],
     maxzoom: a.maxzoom ?? 14,
