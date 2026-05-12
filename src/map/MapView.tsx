@@ -41,6 +41,29 @@ import {
   titleFromProps,
 } from './MapHoverTooltip';
 
+/** fitBounds poate coborî zoom-ul sub minzoom-ul arhivei PMTiles → raster negru. */
+function clampZoomForPmtilesBasemap(map: MlMap, base: BaseMapDef) {
+  if (!base.pmtiles || !base.pmtilesUrl) return;
+  const minZ =
+    typeof base.pmtilesMinZoom === 'number' && Number.isFinite(base.pmtilesMinZoom)
+      ? base.pmtilesMinZoom
+      : 0;
+  const maxZ =
+    typeof base.maxzoom === 'number' && Number.isFinite(base.maxzoom) ? base.maxzoom : 24;
+  if (minZ <= 0 && maxZ >= 24) return;
+  const z = map.getZoom();
+  const next = Math.min(maxZ, Math.max(minZ, z));
+  if (Math.abs(next - z) > 1e-4) {
+    map.setZoom(next, { duration: 0 });
+  }
+}
+
+function scheduleClampZoomAfterPmtilesFit(map: MlMap, base: BaseMapDef) {
+  const run = () => clampZoomForPmtilesBasemap(map, base);
+  map.once('moveend', run);
+  window.setTimeout(run, 750);
+}
+
 interface Props {
   points: PointOfInterest[];
   zones: Zone[];
@@ -780,6 +803,24 @@ export function MapView({
      * Totuși sursa `base` există — putem desena CAD / puncte / trasee peste fundal.
      */
     const runInstallWhenStyleReady = () => {
+      const applyPmtilesViewport = () => {
+        if (!base.pmtiles || !base.pmtilesUrl) return;
+        const b = base.pmtilesBounds;
+        if (Array.isArray(b) && b.length === 4 && b.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+          const maxZ = Math.min(base.maxzoom ?? 18, 19);
+          map.fitBounds(
+            [
+              [b[0], b[1]],
+              [b[2], b[3]],
+            ],
+            { padding: 48, maxZoom: maxZ, duration: 700 },
+          );
+          scheduleClampZoomAfterPmtilesFit(map, base);
+        } else {
+          clampZoomForPmtilesBasemap(map, base);
+        }
+      };
+
       let frames = 0;
       const tick = () => {
         if (cancelled) return;
@@ -793,17 +834,7 @@ export function MapView({
             try {
               ensureInputsEnabled(map);
               installLayers(map);
-              const b = base.pmtilesBounds;
-              if (base.pmtiles && Array.isArray(b) && b.length === 4 && b.every((x) => typeof x === 'number' && Number.isFinite(x))) {
-                const maxZ = Math.min(base.maxzoom ?? 18, 19);
-                map.fitBounds(
-                  [
-                    [b[0], b[1]],
-                    [b[2], b[3]],
-                  ],
-                  { padding: 48, maxZoom: maxZ, duration: 700 },
-                );
-              }
+              applyPmtilesViewport();
             } catch (e) {
               console.error('[map] installLayers (forced)', e);
             }
@@ -815,17 +846,7 @@ export function MapView({
         try {
           ensureInputsEnabled(map);
           installLayers(map);
-          const b = base.pmtilesBounds;
-          if (base.pmtiles && Array.isArray(b) && b.length === 4 && b.every((x) => typeof x === 'number' && Number.isFinite(x))) {
-            const maxZ = Math.min(base.maxzoom ?? 18, 19);
-            map.fitBounds(
-              [
-                [b[0], b[1]],
-                [b[2], b[3]],
-              ],
-              { padding: 48, maxZoom: maxZ, duration: 700 },
-            );
-          }
+          applyPmtilesViewport();
         } catch (e) {
           console.error('[map] installLayers', e);
         }
