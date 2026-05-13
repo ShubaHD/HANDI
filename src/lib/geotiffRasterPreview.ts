@@ -7,12 +7,65 @@ import './ensureRomaniaStereo70Proj';
 type GeoImage = {
   getGeoKeys: () => Partial<Record<string, unknown>> | null;
   getBoundingBox: (tilegrid?: boolean) => number[];
+  getFileDirectory: () => { getValue: (k: string) => unknown };
+  getOrigin: () => number[];
+  getResolution: () => number[];
   getWidth: () => number;
   getHeight: () => number;
   readRGB: (o?: Record<string, unknown>) => Promise<unknown>;
   readRasters: (o?: Record<string, unknown>) => Promise<unknown>;
   getGDALNoData: () => number | null;
 };
+
+/**
+ * BBox în CRS-ul rasterului, aliniat cu GDAL la „RasterPixelIsPoint” (GeoKey 2):
+ * geotiff.js folosește colțuri la 0…W/H ca la PixelIsArea, ceea ce deplasează
+ * extinderea cu ~½ pixel în sol → pe hartă (ex. Stereo70) apare adesea spre est.
+ */
+function getProjectedBoundingBox(image: GeoImage): [number, number, number, number] {
+  try {
+    const gk = image.getGeoKeys();
+    const rasterType = gk?.GTRasterTypeGeoKey;
+    const isPoint = rasterType === 2;
+    const w = image.getWidth();
+    const h = image.getHeight();
+    const corners: [number, number][] = isPoint
+      ? [
+          [-0.5, -0.5],
+          [-0.5, h - 0.5],
+          [w - 0.5, -0.5],
+          [w - 0.5, h - 0.5],
+        ]
+      : [
+          [0, 0],
+          [0, h],
+          [w, 0],
+          [w, h],
+        ];
+
+    const fd = image.getFileDirectory();
+    const modelTransformation = fd.getValue('ModelTransformation') as number[] | undefined;
+    if (
+      modelTransformation &&
+      modelTransformation.length >= 16 &&
+      Number.isFinite(modelTransformation[0] as number)
+    ) {
+      const [a, b, , d, e, f, , hh] = modelTransformation;
+      const xs = corners.map(([I, J]) => d + a * I + b * J);
+      const ys = corners.map(([I, J]) => hh + e * I + f * J);
+      return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    }
+
+    const origin = image.getOrigin();
+    const res = image.getResolution();
+    const xs = corners.map(([I, _J]) => origin[0] + I * res[0]);
+    const ys = corners.map(([_I, J]) => origin[1] + J * res[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  } catch {
+    const b = image.getBoundingBox();
+    return [b[0]!, b[1]!, b[2]!, b[3]!];
+  }
+}
 
 /** WGS 84 / Pseudo-Mercator (Google Maps, multe ortofoto „3857”). */
 proj4.defs(
@@ -79,7 +132,7 @@ function bboxToWgs84(minX: number, minY: number, maxX: number, maxY: number, fro
 function resolveSourceCrs(image: GeoImage): string {
   const fromKeys = geoKeysToEpsg(image);
   if (fromKeys) return fromKeys;
-  const [minX, minY, maxX, maxY] = image.getBoundingBox();
+  const [minX, minY, maxX, maxY] = getProjectedBoundingBox(image);
   const spanX = Math.abs(maxX - minX);
   const spanY = Math.abs(maxY - minY);
   if (spanX <= 360 && spanY <= 180 && spanX > 1e-6 && spanY > 1e-6) {
@@ -245,7 +298,7 @@ export async function buildRasterPreviewFromGeoTiff(
     const outH = Math.max(1, Math.round(ih * scale));
 
     const fromCrs = resolveCrsForBBox(image, crsMode);
-    const [minX, minY, maxX, maxY] = image.getBoundingBox();
+    const [minX, minY, maxX, maxY] = getProjectedBoundingBox(image);
     validateForcedCrsMatchesBboxUnits(fromCrs, crsMode, minX, minY, maxX, maxY);
     const bbox = bboxToWgs84(minX, minY, maxX, maxY, fromCrs);
 

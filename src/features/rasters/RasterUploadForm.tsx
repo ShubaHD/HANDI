@@ -252,6 +252,8 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
             <em>metri</em> Stereo70 (ex. 400000–700000), nu pentru fișiere deja în grade WGS84 — altfel imaginea sare
             complet. Ortofoto / LiDAR tipic: <strong className="text-slate-400">3857</strong> sau{' '}
             <strong className="text-slate-400">Auto</strong>. Numele cu „3857” setează automat Web Mercator pe Auto.
+            Bbox-ul se calculează corect și pentru GeoTIFF cu <strong className="text-slate-400">RasterPixelIsPoint</strong>;
+            dacă tot vezi decalaj mic, șterge rasterul vechi și <strong className="text-slate-400">reîncarcă</strong> fișierul.
           </p>
         </div>
       )}
