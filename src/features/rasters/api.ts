@@ -152,11 +152,24 @@ export function rasterCornersFromBounds(bounds: GeoJSON.Polygon): {
     minLat = Infinity,
     maxLon = -Infinity,
     maxLat = -Infinity;
-  for (const [lng, lat] of ring) {
+  for (const pt of ring) {
+    const lng = Number(pt[0]);
+    const lat = Number(pt[1]);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
     if (lng < minLon) minLon = lng;
     if (lat < minLat) minLat = lat;
     if (lng > maxLon) maxLon = lng;
     if (lat > maxLat) maxLat = lat;
+  }
+  if (
+    !Number.isFinite(minLon) ||
+    !Number.isFinite(minLat) ||
+    !Number.isFinite(maxLon) ||
+    !Number.isFinite(maxLat) ||
+    minLon >= maxLon ||
+    minLat >= maxLat
+  ) {
+    return null;
   }
   return { minLon, minLat, maxLon, maxLat };
 }

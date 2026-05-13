@@ -1041,14 +1041,38 @@ export function MapView({
     if (!flyTo) return;
     const map = mapRef.current;
     if (!map) return;
-    map.flyTo({ center: [flyTo.lng, flyTo.lat], zoom: flyTo.zoom ?? 16, duration: 1200 });
+    const { lng, lat, zoom } = flyTo;
+    const run = () => {
+      try {
+        map.flyTo({ center: [lng, lat], zoom: zoom ?? 16, duration: 1200 });
+      } catch {
+        /* ignore */
+      }
+    };
+    if (map.isStyleLoaded()) run();
+    else map.once('idle', run);
+    return () => {
+      map.off('idle', run);
+    };
   }, [flyTo]);
 
   useEffect(() => {
     if (!fitBounds) return;
     const map = mapRef.current;
     if (!map) return;
-    map.fitBounds(fitBounds, { padding: 60, duration: 1200 });
+    const b = fitBounds;
+    const run = () => {
+      try {
+        map.fitBounds(b, { padding: 60, duration: 1200 });
+      } catch {
+        /* ignore */
+      }
+    };
+    if (map.isStyleLoaded()) run();
+    else map.once('idle', run);
+    return () => {
+      map.off('idle', run);
+    };
   }, [fitBounds]);
 
   useEffect(() => {
@@ -1169,6 +1193,8 @@ export function MapView({
             tracks={tracks}
             annotations={annotations}
             cadLayers={cadLayers}
+            rasters={rasters}
+            rasterState={rasterState}
             annotationPlacementMode={annotationPlacementMode}
             sketchMode={sketchMode}
             sketchStrokeColor={sketchStrokeColor}

@@ -4,9 +4,11 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { pointDisplayColorFromProps } from '@/features/points/pointStyle';
-import { POINT_TYPES, type Annotation, type PointOfInterest, type Track, type Zone } from '@/lib/types';
+import { POINT_TYPES, type Annotation, type PointOfInterest, type RasterOverlay, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
+import { publicUrl, rasterCornersFromBounds, rasterPmtilesHttpUrl } from '@/features/rasters/api';
 import type { CadLayerRow } from '@/features/cad/api';
+import type { RasterLayerState } from '@/map/layers/RasterOverlayLayer';
 import { usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
 import {
   cadLabelLockedFromStyle,
@@ -77,6 +79,9 @@ interface Props {
   flyTo?: { lng: number; lat: number; zoom?: number } | null;
   fitBounds?: [[number, number], [number, number]] | null;
   myLocation?: { lat: number; lon: number } | null;
+  /** Overlay-uri imagine (PNG/JPG / preview GeoTIFF). PMTiles rămân doar pe MapLibre. */
+  rasters?: RasterOverlay[];
+  rasterState?: RasterLayerState;
 }
 
 function toPointFC(points: PointOfInterest[]): GeoJSON.FeatureCollection {
@@ -166,6 +171,8 @@ export function LeafletView({
   flyTo,
   fitBounds,
   myLocation = null,
+  rasters = [],
+  rasterState,
 }: Props) {
   const onMapClickRef = useRef(onMapClick);
   const onBoundsChangeRef = useRef(onBoundsChange);
@@ -190,6 +197,7 @@ export function LeafletView({
     annotations?: L.LayerGroup;
     cad?: L.LayerGroup;
     userLoc?: L.CircleMarker;
+    rasters?: L.LayerGroup;
   }>({});
 
   const pointsFC = useMemo(() => toPointFC(points), [points]);
@@ -265,6 +273,7 @@ export function LeafletView({
       crossOrigin: true,
     });
     tile.addTo(map);
+    tile.bringToBack();
     layersRef.current.tile = tile;
 
     return () => {
@@ -289,8 +298,52 @@ export function LeafletView({
       crossOrigin: true,
     });
     tile.addTo(map);
+    tile.bringToBack();
     layersRef.current.tile = tile;
   }, [base]);
+
+  // Raster overlays (image / GeoTIFF preview) — același flux ca MapLibre `syncRasterLayers` pentru format !== pmtiles.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !rasterState) return;
+
+    const prev = layersRef.current.rasters;
+    if (prev) {
+      map.removeLayer(prev);
+      layersRef.current.rasters = undefined;
+    }
+
+    const group = L.layerGroup();
+    for (const r of rasters) {
+      if (!rasterState.visibleIds.has(r.id)) continue;
+      if (rasterPmtilesHttpUrl(r)) continue;
+      const corners = rasterCornersFromBounds(r.bounds);
+      if (!corners) continue;
+      const url = publicUrl(r.storage_path);
+      const bounds = L.latLngBounds(
+        [corners.minLat, corners.minLon],
+        [corners.maxLat, corners.maxLon],
+      );
+      const opacity = rasterState.opacity[r.id] ?? 0.7;
+      L.imageOverlay(url, bounds, {
+        opacity,
+        interactive: false,
+        crossOrigin: true,
+      }).addTo(group);
+    }
+    if (group.getLayers().length > 0) {
+      group.addTo(map);
+      layersRef.current.rasters = group;
+    }
+
+    return () => {
+      const g = layersRef.current.rasters;
+      if (g) {
+        map.removeLayer(g);
+        layersRef.current.rasters = undefined;
+      }
+    };
+  }, [rasters, rasterState]);
 
   // overlays
   useEffect(() => {
