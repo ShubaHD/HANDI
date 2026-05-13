@@ -609,22 +609,22 @@ export default function FieldPage() {
   };
 
   return (
-    <div className="h-screen w-full flex flex-col">
-      <header className="flex items-center gap-3 px-3 py-2 bg-slate-950 border-b border-slate-800 z-20">
+    <div className="flex h-dvh max-h-dvh min-h-0 w-full flex-col">
+      <header className="z-20 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-slate-800 bg-slate-950 px-3 py-2 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.5rem,env(safe-area-inset-top))]">
         <button
           onClick={() => setSidebarOpen((v) => !v)}
-          className="md:hidden px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 text-sm"
+          className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-sm hover:bg-slate-800 md:hidden"
         >
           {sidebarOpen ? 'Harta' : 'Lista'}
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center font-bold">
             H
           </div>
           <span className="font-semibold">HANDI</span>
           <span className="text-xs text-slate-500 hidden sm:inline">Speo Field</span>
         </div>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
           <button
             onClick={() => {
               setDiagOpen(true);
@@ -658,7 +658,7 @@ export default function FieldPage() {
                 }
               })();
             }}
-            className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+            className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
             title="Diagnostice (fara DevTools)"
           >
             Diag
@@ -685,7 +685,7 @@ export default function FieldPage() {
                 }
               })();
             }}
-            className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-50 max-w-[10rem] sm:max-w-none truncate"
+            className="max-w-[7.5rem] shrink truncate rounded-lg border border-slate-700 px-2 py-1 text-[11px] hover:bg-slate-800 disabled:opacity-50 sm:max-w-none sm:text-xs"
             title={
               'Salvează local structura CAD și lista de rastere pentru mod fără rețea. ' +
               'Apasă din nou când ai date noi pe server. ' +
@@ -693,15 +693,30 @@ export default function FieldPage() {
               'Punctele adăugate offline se sincronizează automat când revine internetul (coadă).'
             }
           >
-            {fieldPackBusy ? 'Salvez…' : fieldPackSavedAt ? 'Actualizează pachet CAD' : 'Pachet offline CAD'}
+            {fieldPackBusy ? (
+              '…'
+            ) : fieldPackSavedAt ? (
+              <>
+                <span className="sm:hidden">Actual. pachet</span>
+                <span className="hidden sm:inline">Actualizează pachet CAD</span>
+              </>
+            ) : (
+              <>
+                <span className="sm:hidden">Pachet CAD</span>
+                <span className="hidden sm:inline">Pachet offline CAD</span>
+              </>
+            )}
           </button>
-          <SyncIndicator refreshTick={syncTick} onSynced={() => void reload()} />
+          <div className="shrink-0">
+            <SyncIndicator refreshTick={syncTick} onSynced={() => void reload()} />
+          </div>
           <span className="text-xs text-slate-400 hidden md:inline">{user?.email}</span>
           <button
             onClick={() => signOut()}
-            className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+            className="shrink-0 rounded-lg border border-slate-700 px-2 py-1 text-[11px] hover:bg-slate-800 sm:text-xs"
+            title="Ieșire din cont"
           >
-            Iesire
+            Ieșire
           </button>
         </div>
       </header>
@@ -1271,7 +1286,7 @@ export default function FieldPage() {
           )}
         </aside>
 
-        <main className="relative z-0 flex-1 min-h-0 min-w-0 h-full">
+        <main className="relative z-0 flex h-full min-h-0 min-w-0 flex-1 pb-[env(safe-area-inset-bottom,0px)]">
           <MapView
             points={points}
             zones={zones}

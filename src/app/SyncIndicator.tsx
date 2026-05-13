@@ -29,7 +29,7 @@ export function SyncIndicator({ refreshTick, onSynced }: Props) {
   };
 
   return (
-    <div className="flex items-center gap-1.5 text-xs">
+    <div className="flex shrink-0 flex-nowrap items-center gap-1.5 text-[11px] whitespace-nowrap sm:text-xs">
       <span
         className={`inline-block w-2 h-2 rounded-full ${
           online ? 'bg-emerald-400' : 'bg-amber-400'
