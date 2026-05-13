@@ -263,7 +263,10 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
             Mercator: <strong className="text-slate-400">3857</strong> sau <strong className="text-slate-400">Auto</strong>.
             Numele cu „3857” / „dp1970” / „piscului” setează CRS pe Auto. Bbox corect și pentru{' '}
             <strong className="text-slate-400">RasterPixelIsPoint</strong>; după update,{' '}
-            <strong className="text-slate-400">reîncarcă</strong> GeoTIFF-ul ca să se refacă limitele.
+            <strong className="text-slate-400">reîncarcă</strong> GeoTIFF-ul ca să se refacă limitele. Transformarea
+            trebuie să fie <em>în</em> TIFF (tag-uri GeoTIFF); dacă ArcMap a lăsat doar un .tfw lângă fișier, browserul
+            nu îl citește — folosește <strong className="text-slate-400">gdal_translate -of GTiff</strong> sau reexportă
+            cu georef încorporat.
           </p>
         </div>
       )}

@@ -67,6 +67,29 @@ function getProjectedBoundingBox(image: GeoImage): [number, number, number, numb
   }
 }
 
+/** Mesaj când lipsește geotransform în IFD (frecvent: ArcMap a scris doar .tfw lângă TIFF). */
+const GEOTIFF_MISSING_AFFINE_HELP =
+  'TIFF-ul nu are georeferințiere în fișier (lipsesc tag-urile GeoTIFF ModelTiepoint+ModelPixelScale sau ModelTransformation). ' +
+  'Handi (în browser) nu citește world file-ul .tfw separat. ' +
+  'Soluții: (1) QGIS sau GDAL (OSGeo4W), în folderul cu .tif și .tfw: gdal_translate -of GTiff 206_resalvat.tif 206_embed.tif — embed-ui transformarea. ' +
+  '(2) ArcMap: Copy Raster / Export Raster Data către un nou GeoTIFF și verifică în QGIS că rasterul se deschide corect fără să adaugi manual .tfw. ' +
+  '(3) Alternativ: PNG/JPG + bounding box manual, sau PMTiles.';
+
+function geoTiffHasEmbeddedPixelToWorldTransform(image: GeoImage): boolean {
+  const fd = image.getFileDirectory();
+  const mt = fd.getValue('ModelTransformation') as number[] | undefined;
+  if (mt && Array.isArray(mt) && mt.length >= 16 && Number.isFinite(mt[0] as number)) return true;
+  const tp = fd.getValue('ModelTiepoint') as number[] | undefined;
+  const ps = fd.getValue('ModelPixelScale') as number[] | undefined;
+  return Boolean(tp && tp.length === 6 && ps && Array.isArray(ps) && ps.length >= 2);
+}
+
+function assertGeoTiffEmbeddedTransform(image: GeoImage): void {
+  if (!geoTiffHasEmbeddedPixelToWorldTransform(image)) {
+    throw new Error(GEOTIFF_MISSING_AFFINE_HELP);
+  }
+}
+
 /** WGS 84 / Pseudo-Mercator (Google Maps, multe ortofoto „3857”). */
 proj4.defs(
   'EPSG:3857',
@@ -337,6 +360,7 @@ export async function buildRasterPreviewFromGeoTiff(
   const tiff = await fromBlob(file);
   try {
     const image = (await tiff.getImage(0)) as GeoImage;
+    assertGeoTiffEmbeddedTransform(image);
     const iw = image.getWidth();
     const ih = image.getHeight();
     const scale = Math.min(1, PREVIEW_MAX / Math.max(iw, ih));
@@ -405,6 +429,12 @@ export async function buildRasterPreviewFromGeoTiff(
     });
 
     return { jpegBlob, bbox };
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    if (m.includes('does not have an affine transformation')) {
+      throw new Error(GEOTIFF_MISSING_AFFINE_HELP);
+    }
+    throw e;
   } finally {
     await Promise.resolve(tiff.close()).catch(() => {});
   }
