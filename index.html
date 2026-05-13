@@ -10,6 +10,53 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>HANDI - Speo Field</title>
+    <script>
+      (function () {
+        var k = 'handi_chunk_reload_once_v1';
+        function tryReload() {
+          try {
+            if (sessionStorage.getItem(k)) return;
+            sessionStorage.setItem(k, '1');
+          } catch (e) {
+            return;
+          }
+          location.reload();
+        }
+        function isChunkFail(msg) {
+          if (!msg) return false;
+          var m = String(msg).toLowerCase();
+          return (
+            m.indexOf('failed to fetch dynamically imported module') !== -1 ||
+            m.indexOf('error loading dynamically imported module') !== -1 ||
+            m.indexOf('importing a module script failed') !== -1 ||
+            m.indexOf('failed to load module script') !== -1
+          );
+        }
+        addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          var msg =
+            r && typeof r === 'object' && 'message' in r ? String(r.message) : String(r || '');
+          if (isChunkFail(msg)) {
+            e.preventDefault();
+            tryReload();
+          }
+        });
+        addEventListener('vite:preloadError', function (e) {
+          if (e && typeof e.preventDefault === 'function') e.preventDefault();
+          tryReload();
+        });
+        addEventListener(
+          'error',
+          function (e) {
+            var t = e.target;
+            if (!t || t.tagName !== 'SCRIPT') return;
+            var src = String(t.src || '');
+            if (src.indexOf('/assets/') !== -1) tryReload();
+          },
+          true,
+        );
+      })();
+    </script>
   </head>
   <body class="bg-slate-900 text-slate-100">
     <div id="root"></div>
