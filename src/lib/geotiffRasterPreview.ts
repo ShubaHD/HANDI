@@ -107,6 +107,50 @@ function resolveCrsForBBox(image: GeoImage, mode: GeoTiffCrsMode): string {
   return resolveSourceCrs(image);
 }
 
+/**
+ * True dacă limitele arată ca lon/lat în grade (tipic WGS84), nu ca metri proiectați.
+ * Forțarea Stereo70/3857 pe astfel de valori produce poziții complet greșite.
+ */
+function bboxLooksLikeGeographicDegrees(minX: number, minY: number, maxX: number, maxY: number): boolean {
+  const wx = Math.min(minX, maxX);
+  const ex = Math.max(minX, maxX);
+  const sy = Math.min(minY, maxY);
+  const ny = Math.max(minY, maxY);
+  const spanX = ex - wx;
+  const spanY = ny - sy;
+  if (!(spanX > 1e-12 && spanY > 1e-12)) return false;
+  if (spanX > 350 || spanY > 170) return false;
+  const inLonRange = wx >= -180 && ex <= 180;
+  const inLatRange = sy >= -90 && ny <= 90;
+  return inLonRange && inLatRange && spanX <= 30 && spanY <= 25;
+}
+
+function validateForcedCrsMatchesBboxUnits(
+  fromCrs: string,
+  crsMode: GeoTiffCrsMode,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): void {
+  if (crsMode === 'auto') return;
+  if (!bboxLooksLikeGeographicDegrees(minX, minY, maxX, maxY)) return;
+
+  if (fromCrs === 'EPSG:31700' || fromCrs === 'EPSG:3844') {
+    throw new Error(
+      'BBox-ul din GeoTIFF arată în grade (longitudine / latitudine), nu în metri Stereo70. ' +
+        'EPSG:31700 și EPSG:3844 sunt pentru coordonate în metri pe sol (ex. 400000–700000). ' +
+        'Dacă forțezi Stereo70 aici, imaginea sare departe (ex. peste Rusia). ' +
+        'Alege „Auto” ca să se folosească CRS-ul din fișier, sau EPSG:3857 dacă e ortofoto Web Mercator.',
+    );
+  }
+  if (fromCrs === 'EPSG:3857') {
+    throw new Error(
+      'BBox-ul pare deja în grade geografice; EPSG:3857 folosește metri Web Mercator. Alege „Auto” sau alt CRS potrivit.',
+    );
+  }
+}
+
 function isNoData(v: number, nodata: number | null): boolean {
   if (Number.isNaN(v)) return true;
   if (nodata == null || !Number.isFinite(nodata)) return false;
@@ -209,6 +253,7 @@ export async function buildRasterPreviewFromGeoTiff(
 
     const fromCrs = resolveCrsForBBox(image, crsMode);
     const [minX, minY, maxX, maxY] = image.getBoundingBox();
+    validateForcedCrsMatchesBboxUnits(fromCrs, crsMode, minX, minY, maxX, maxY);
     const bbox = bboxToWgs84(minX, minY, maxX, maxY, fromCrs);
 
     const nodata = image.getGDALNoData();

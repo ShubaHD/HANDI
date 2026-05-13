@@ -248,9 +248,10 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
             </button>
           </div>
           <p className="mt-1 text-[10px] text-slate-500 leading-snug">
-            Decalaj mare: ortofoto/tile în <strong className="text-slate-400">3857</strong>; date naționale în{' '}
-            <strong className="text-slate-400">3844</strong> sau <strong className="text-slate-400">31700</strong>. Numele
-            cu „3857” setează automat Web Mercator dacă ești pe Auto. Alegerea se salvează la click pe un CRS.
+            <strong className="text-slate-400">31700 / 3844</strong> doar dacă valorile din TIF sunt în{' '}
+            <em>metri</em> Stereo70 (ex. 400000–700000), nu pentru fișiere deja în grade WGS84 — altfel imaginea sare
+            complet. Ortofoto / LiDAR tipic: <strong className="text-slate-400">3857</strong> sau{' '}
+            <strong className="text-slate-400">Auto</strong>. Numele cu „3857” setează automat Web Mercator pe Auto.
           </p>
         </div>
       )}
