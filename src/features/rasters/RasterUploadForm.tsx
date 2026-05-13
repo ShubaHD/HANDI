@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { GeoTiffCrsMode } from '@/lib/geotiffRasterPreview';
+import { buildRasterPreviewFromGeoTiff, type GeoTiffCrsMode } from '@/lib/geotiffRasterPreview';
 import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
 import { uploadRaster, type BBox } from './api';
 
@@ -96,7 +96,6 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
         : { format: 'image' };
 
       if (isGeoTiff) {
-        const { buildRasterPreviewFromGeoTiff } = await import('@/lib/geotiffRasterPreview');
         const { jpegBlob, bbox: bb } = await buildRasterPreviewFromGeoTiff(file, {
           crsMode: geoTiffCrsMode,
         });
