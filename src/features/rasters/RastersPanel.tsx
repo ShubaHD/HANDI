@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { RasterKind, RasterOverlay } from '@/lib/types';
-import { deleteRaster, rasterPmtilesHttpUrl } from './api';
+import { deleteRaster, isRasterPmtilesOverlay, rasterPmtilesHttpUrl } from './api';
 
 const KIND_LABELS: Record<RasterKind, string> = {
   thermal: 'Termal',
@@ -28,6 +28,8 @@ interface Props {
   onSaveOfflinePmtiles: (r: RasterOverlay, onProgress: (p: { loaded: number; total?: number }) => void) => Promise<void>;
   onDeleteOfflinePmtiles: (r: RasterOverlay) => Promise<void>;
   offlinePmtilesById: Record<string, string>;
+  /** După salvare/actualizare copie locală: reîncarcă sursa pe hartă dacă rasterul e vizibil. */
+  onOfflineRasterSaveComplete?: (rasterId: string) => void;
   onChanged: () => void;
   /** Pe Leaflet implicit, PMTiles nu se randă; afișează notă cu ?maplibre=1. */
   pmtilesMaplibreHint?: boolean;
@@ -44,6 +46,7 @@ export function RastersPanel({
   onSaveOfflinePmtiles,
   onDeleteOfflinePmtiles,
   offlinePmtilesById,
+  onOfflineRasterSaveComplete,
   onChanged,
   pmtilesMaplibreHint = false,
 }: Props) {
@@ -51,10 +54,18 @@ export function RastersPanel({
   const [saving, setSaving] = useState<Record<string, { loaded: number; total?: number }>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const isPmtiles = useMemo(() => {
+  const isPmtilesRaster = useMemo(() => {
     const m: Record<string, boolean> = {};
     for (const r of rasters) {
-      m[r.id] = Boolean(rasterPmtilesHttpUrl(r));
+      m[r.id] = isRasterPmtilesOverlay(r);
+    }
+    return m;
+  }, [rasters]);
+
+  const canSaveOfflineBlob = useMemo(() => {
+    const m: Record<string, boolean> = {};
+    for (const r of rasters) {
+      m[r.id] = Boolean(rasterPmtilesHttpUrl(r) || r.storage_path);
     }
     return m;
   }, [rasters]);
@@ -130,42 +141,63 @@ export function RastersPanel({
                       />
                       Vizibil
                     </label>
-                    {isPmtiles[r.id] && (
-                      <button
-                        onClick={() => {
-                          if (busyId) return;
-                          const hasLocal = Boolean(offlinePmtilesById[r.id]);
-                          if (!hasLocal) {
-                            setBusyId(r.id);
-                            setSaving((p) => ({ ...p, [r.id]: { loaded: 0 } }));
-                            void onSaveOfflinePmtiles(r, (prog) => {
-                              setSaving((p) => ({ ...p, [r.id]: prog }));
-                            })
-                              .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
-                              .finally(() => {
-                                setBusyId(null);
-                                setSaving((p) => {
-                                  const n = { ...p };
-                                  delete n[r.id];
-                                  return n;
-                                });
-                              });
-                          } else {
-                            void (async () => {
-                              if (!(await ask('Stergi copia offline pentru acest LiDAR?'))) return;
+                    {canSaveOfflineBlob[r.id] && (
+                      <div className="flex flex-col items-end gap-0.5 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (busyId) return;
                               setBusyId(r.id);
-                              void onDeleteOfflinePmtiles(r)
+                              setSaving((p) => ({ ...p, [r.id]: { loaded: 0 } }));
+                              void onSaveOfflinePmtiles(r, (prog) => {
+                                setSaving((p) => ({ ...p, [r.id]: prog }));
+                              })
+                                .then(() => {
+                                  onOfflineRasterSaveComplete?.(r.id);
+                                })
                                 .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
-                                .finally(() => setBusyId(null));
-                            })();
-                          }
-                        }}
-                        className="text-xs px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-50"
-                        disabled={busyId !== null}
-                        title="Salveaza / sterge copia offline"
-                      >
-                        {offlinePmtilesById[r.id] ? 'LiDAR offline: ON' : 'Save LiDAR offline'}
-                      </button>
+                                .finally(() => {
+                                  setBusyId(null);
+                                  setSaving((p) => {
+                                    const n = { ...p };
+                                    delete n[r.id];
+                                    return n;
+                                  });
+                                });
+                            }}
+                            className="text-xs px-2 py-1 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
+                            disabled={busyId !== null}
+                            title={
+                              offlinePmtilesById[r.id]
+                                ? 'Re-descarcă fișierul (actualizează copia locală)'
+                                : 'Descarcă în acest dispozitiv pentru folosire fără rețea'
+                            }
+                          >
+                            {offlinePmtilesById[r.id] ? 'Actualizează offline' : 'Salvează offline'}
+                          </button>
+                          {offlinePmtilesById[r.id] && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (busyId) return;
+                                void (async () => {
+                                  if (!(await ask(`Ștergi copia locală pentru „${r.name}”?`))) return;
+                                  setBusyId(r.id);
+                                  void onDeleteOfflinePmtiles(r)
+                                    .catch((e) => alert(e instanceof Error ? e.message : 'Eroare'))
+                                    .finally(() => setBusyId(null));
+                                })();
+                              }}
+                              className="text-xs px-1.5 py-1 rounded border border-slate-700 text-slate-400 hover:text-red-300 hover:border-red-900/60 disabled:opacity-50"
+                              disabled={busyId !== null}
+                              title="Șterge copia locală"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     )}
                     <button
                       onClick={() => remove(r)}
@@ -183,7 +215,7 @@ export function RastersPanel({
                         : ''}
                     </div>
                   )}
-                  {pmtilesMaplibreHint && isPmtiles[r.id] && (
+                  {pmtilesMaplibreHint && isPmtilesRaster[r.id] && (
                     <div className="mt-1 ml-5 text-[10px] leading-snug text-slate-500">
                       PMTiles pe hartă: adaugă manual <span className="font-mono text-slate-400">?maplibre=1</span> la URL
                       (sau scoate <span className="font-mono">?leaflet=1</span>).

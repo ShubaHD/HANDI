@@ -1,7 +1,7 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { RasterOverlay } from '@/lib/types';
 import { mapAcceptsOverlayLayers } from '@/map/mapOverlayReadiness';
-import { publicUrl, rasterCornersFromBounds } from '@/features/rasters/api';
+import { isRasterPmtilesOverlay, publicUrl, rasterCornersFromBounds } from '@/features/rasters/api';
 
 const SOURCE_PREFIX = 'raster-overlay-src-';
 const LAYER_PREFIX = 'raster-overlay-lyr-';
@@ -42,8 +42,7 @@ export function syncRasterLayers(
     const lyrId = LAYER_PREFIX + r.id;
     const opacity = state.opacity[r.id] ?? 0.7;
 
-    const format = (r.metadata as { format?: unknown } | null | undefined)?.format;
-    const isPMTiles = format === 'pmtiles';
+    const isPMTiles = isRasterPmtilesOverlay(r);
     const metaUrl = (r.metadata as { pmtiles_url?: unknown } | null | undefined)?.pmtiles_url;
     const overrideUrl = state.pmtilesUrlByRasterId?.[r.id];
     const zoomOverride = state.pmtilesZoomByRasterId?.[r.id];

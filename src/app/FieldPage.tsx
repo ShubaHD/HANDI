@@ -12,6 +12,7 @@ import { RastersPanel } from '@/features/rasters/RastersPanel';
 import { RasterUploadForm } from '@/features/rasters/RasterUploadForm';
 import {
   fetchRasters,
+  isRasterPmtilesOverlay,
   rasterCornersFromBounds,
   rasterPmtilesHttpUrl,
   suggestZoomForBoundsCorners,
@@ -54,9 +55,11 @@ import {
   patchCadLabelFeatureMetadata,
   removeCadFeatureAtIndex,
 } from '@/features/cad/cadFeatureIds';
+import { loadFieldOfflineSnapshot, saveFieldOfflineSnapshot } from '@/lib/db/fieldOfflinePack';
 import {
   buildRasterUrlOverrides,
   deleteRasterArchive,
+  saveRasterImageOffline,
   saveRemoteRasterArchive,
 } from '@/lib/pmtiles';
 import { type AppDiagnostics, checkPmtilesUrl } from '@/lib/diagnostics';
@@ -166,6 +169,8 @@ export default function FieldPage() {
   const [diagOpen, setDiagOpen] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diag, setDiag] = useState<AppDiagnostics | null>(null);
+  const [fieldPackSavedAt, setFieldPackSavedAt] = useState<number | null>(null);
+  const [fieldPackBusy, setFieldPackBusy] = useState(false);
 
   const rasterStateWithPmtiles: RasterLayerState = {
     visibleIds: rasterVisible,
@@ -174,6 +179,18 @@ export default function FieldPage() {
     pmtilesZoomByRasterId: pmtilesZoomById,
   };
 
+  const bumpRasterLayerAfterOfflineSave = useCallback((rasterId: string) => {
+    setRasterVisible((prev) => {
+      if (!prev.has(rasterId)) return prev;
+      const n = new Set(prev);
+      n.delete(rasterId);
+      window.setTimeout(() => {
+        setRasterVisible((p) => new Set(p).add(rasterId));
+      }, 0);
+      return n;
+    });
+  }, []);
+
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured) {
       setLoading(false);
@@ -181,7 +198,7 @@ export default function FieldPage() {
     }
     setError(null);
     try {
-      const [pr, zr, tr, ar, rastersResult, cadImps] = await Promise.all([
+      const [pr, zr, tr, ar, rastersResultRaw, cadImpsRaw] = await Promise.all([
         fetchPointsCached(),
         fetchZonesCached(),
         fetchTracksCached(),
@@ -189,16 +206,37 @@ export default function FieldPage() {
         fetchRasters().catch(() => [] as RasterOverlay[]),
         fetchCadImports().catch(() => [] as CadImport[]),
       ]);
+      let rastersResult = rastersResultRaw;
+      let cadImps = cadImpsRaw;
+      let cadLay: CadLayerRow[] =
+        cadImps.length > 0
+          ? await fetchCadLayers(cadImps.map((i) => i.id)).catch(() => [] as CadLayerRow[])
+          : [];
+
+      const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+      if (offline) {
+        const snap = await loadFieldOfflineSnapshot();
+        if (snap) {
+          if (rastersResult.length === 0 && snap.rasters.length > 0) {
+            rastersResult = snap.rasters;
+          }
+          if (cadImps.length === 0 && snap.cadImports.length > 0) {
+            cadImps = snap.cadImports;
+            cadLay = snap.cadLayers.length > 0 ? snap.cadLayers : cadLay;
+          } else if (cadLay.length === 0 && snap.cadLayers.length > 0) {
+            const importIds = new Set(cadImps.map((i) => i.id));
+            const coherent = snap.cadLayers.filter((l) => importIds.has(l.import_id));
+            if (coherent.length > 0) cadLay = coherent;
+          }
+        }
+      }
+
       setPoints(pr.data);
       setZones(zr.data);
       setTracks(tr.data);
       setAnnotations(ar.data);
       setRasters(rastersResult);
       setCadImports(cadImps);
-      const cadLay =
-        cadImps.length > 0
-          ? await fetchCadLayers(cadImps.map((i) => i.id)).catch(() => [] as CadLayerRow[])
-          : [];
       setCadLayers(cadLay);
       const errs = [pr, zr, tr, ar]
         .filter((r) => r.fromCache && r.error)
@@ -235,6 +273,12 @@ export default function FieldPage() {
   useEffect(() => {
     void buildRasterUrlOverrides().then(setOfflinePmtilesById).catch(() => {
       /* ignore */
+    });
+  }, [syncTick]);
+
+  useEffect(() => {
+    void loadFieldOfflineSnapshot().then((s) => {
+      setFieldPackSavedAt(s?.savedAt ?? null);
     });
   }, [syncTick]);
 
@@ -593,8 +637,8 @@ export default function FieldPage() {
                   const renderer: 'maplibre' | 'leaflet' = forceLeaflet || !forceMaplibre ? 'leaflet' : 'maplibre';
 
                   const pmtilesRasters = rasters
-                    .filter((r) => rasterVisible.has(r.id))
-                    .map((r) => rasterPmtilesHttpUrl(r))
+                    .filter((r) => rasterVisible.has(r.id) && isRasterPmtilesOverlay(r))
+                    .map((r) => offlinePmtilesById[r.id] ?? rasterPmtilesHttpUrl(r))
                     .filter((x): x is string => Boolean(x));
 
                   const pmtiles = await Promise.all(pmtilesRasters.map((u) => checkPmtilesUrl(u)));
@@ -618,6 +662,38 @@ export default function FieldPage() {
             title="Diagnostice (fara DevTools)"
           >
             Diag
+          </button>
+          <button
+            type="button"
+            disabled={
+              fieldPackBusy || (typeof navigator !== 'undefined' && !navigator.onLine) || !isSupabaseConfigured
+            }
+            onClick={() => {
+              setFieldPackBusy(true);
+              void (async () => {
+                try {
+                  const savedAt = await saveFieldOfflineSnapshot({
+                    cadImports,
+                    cadLayers,
+                    rasters,
+                  });
+                  setFieldPackSavedAt(savedAt);
+                } catch (e) {
+                  alert(e instanceof Error ? e.message : 'Eroare la salvare pachet');
+                } finally {
+                  setFieldPackBusy(false);
+                }
+              })();
+            }}
+            className="text-xs px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 disabled:opacity-50 max-w-[10rem] sm:max-w-none truncate"
+            title={
+              'Salvează local structura CAD și lista de rastere pentru mod fără rețea. ' +
+              'Apasă din nou când ai date noi pe server. ' +
+              'Pentru tile-uri mari, folosește „Salvează offline” pe fiecare raster. ' +
+              'Punctele adăugate offline se sincronizează automat când revine internetul (coadă).'
+            }
+          >
+            {fieldPackBusy ? 'Salvez…' : fieldPackSavedAt ? 'Actualizează pachet CAD' : 'Pachet offline CAD'}
           </button>
           <SyncIndicator refreshTick={syncTick} onSynced={() => void reload()} />
           <span className="text-xs text-slate-400 hidden md:inline">{user?.email}</span>
@@ -1052,8 +1128,8 @@ export default function FieldPage() {
                 try {
                   const r = rasters.find((x) => x.id === id);
                   const enabling = !rasterVisible.has(id);
-                  const pmUrl = r ? rasterPmtilesHttpUrl(r) : null;
-                  const isPMTiles = Boolean(pmUrl);
+                  const pmUrl = r ? offlinePmtilesById[r.id] ?? rasterPmtilesHttpUrl(r) : null;
+                  const isPMTiles = Boolean(r && isRasterPmtilesOverlay(r) && pmUrl);
 
                   // When enabling, also read PMTiles header to set correct min/max zoom (many archives are z16-only).
                   if (enabling && isPMTiles && pmUrl) {
@@ -1100,26 +1176,36 @@ export default function FieldPage() {
               onSetOpacity={(id, v) => setRasterOpacity((p) => ({ ...p, [id]: v }))}
               offlinePmtilesById={offlinePmtilesById}
               onSaveOfflinePmtiles={async (r, onProgress) => {
-                const url = rasterPmtilesHttpUrl(r);
-                if (!url) {
-                  throw new Error('Raster PMTiles fără URL (lipsește storage_path sau format invalid).');
+                const pm = rasterPmtilesHttpUrl(r);
+                if (pm) {
+                  await saveRemoteRasterArchive({
+                    rasterId: r.id,
+                    name: r.name,
+                    url: pm,
+                    onProgress,
+                  });
+                } else if (r.storage_path) {
+                  await saveRasterImageOffline({
+                    rasterId: r.id,
+                    name: r.name,
+                    storagePath: r.storage_path,
+                    bounds: r.bounds,
+                    onProgress,
+                  });
+                } else {
+                  throw new Error('Raster fără URL descărcabil (lipsește storage_path).');
                 }
-                await saveRemoteRasterArchive({
-                  rasterId: r.id,
-                  name: r.name,
-                  url,
-                  onProgress,
-                });
                 setOfflinePmtilesById(await buildRasterUrlOverrides());
               }}
               onDeleteOfflinePmtiles={async (r) => {
                 await deleteRasterArchive(r.id);
                 setOfflinePmtilesById(await buildRasterUrlOverrides());
               }}
+              onOfflineRasterSaveComplete={bumpRasterLayerAfterOfflineSave}
               pmtilesMaplibreHint={shouldSuggestPmtilesMaplibreUrlHint()}
               onZoomTo={async (r) => {
-                const pmUrl = rasterPmtilesHttpUrl(r);
-                if (pmUrl) {
+                const pmUrl = offlinePmtilesById[r.id] ?? rasterPmtilesHttpUrl(r);
+                if (pmUrl && isRasterPmtilesOverlay(r)) {
                   try {
                     const arch = new PMTiles(pmUrl);
                     const h = await arch.getHeader();

@@ -109,15 +109,28 @@ export function publicUrl(storagePath: string): string {
   return data.publicUrl;
 }
 
+/** Fișier PMTiles în storage (upload vechi poate lipsi `metadata.format`). */
+function storagePathLooksLikePmtiles(storagePath: string | undefined): boolean {
+  if (!storagePath) return false;
+  return storagePath.toLowerCase().endsWith('.pmtiles');
+}
+
+/** Raster care se randează ca sursă PMTiles (tile-uri), nu ca imagine unică. */
+export function isRasterPmtilesOverlay(r: RasterOverlay): boolean {
+  const meta = r.metadata as { format?: unknown } | null | undefined;
+  if (meta?.format === 'pmtiles') return true;
+  return storagePathLooksLikePmtiles(r.storage_path);
+}
+
 /**
  * URL HTTP(S) pentru un raster PMTiles (randare MapLibre + download offline).
  * Folosește `metadata.pmtiles_url` dacă e setat, altfel URL public din `storage_path`
  * (upload-ul normal pune doar `format: 'pmtiles'` fără URL în metadata).
  */
 export function rasterPmtilesHttpUrl(r: RasterOverlay): string | null {
-  const meta = r.metadata as { format?: unknown; pmtiles_url?: unknown } | null | undefined;
-  if (meta?.format !== 'pmtiles') return null;
-  const fromMeta = meta.pmtiles_url;
+  if (!isRasterPmtilesOverlay(r)) return null;
+  const meta = r.metadata as { pmtiles_url?: unknown } | null | undefined;
+  const fromMeta = meta?.pmtiles_url;
   if (typeof fromMeta === 'string' && fromMeta.trim()) return fromMeta.trim();
   if (r.storage_path) return publicUrl(r.storage_path);
   return null;

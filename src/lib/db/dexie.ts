@@ -1,5 +1,15 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { Annotation, PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
+import type { CadImport, CadLayerRow } from '@/features/cad/api';
+
+/** Ultimul pachet salvat explicit (CAD + listă rastere) pentru când nu există rețea. */
+export interface FieldOfflineSnapshotRow {
+  id: string;
+  savedAt: number;
+  cadImports: CadImport[];
+  cadLayers: CadLayerRow[];
+  rasters: RasterOverlay[];
+}
 
 export interface PendingMutation {
   id?: number;
@@ -35,7 +45,7 @@ export interface PMTilesArchive {
   remoteUrl?: string;
   rasterId?: string;
   /** Implicit `pmtiles` pentru înregistrări vechi fără câmp. */
-  format?: 'pmtiles' | 'mbtiles';
+  format?: 'pmtiles' | 'mbtiles' | 'raster_image';
   /** Cale relativă în OPFS, ex. `handi-mbtiles/<key>.mbtiles` (fără slash inițial). */
   opfsRelPath?: string;
 }
@@ -48,6 +58,7 @@ class HandiDB extends Dexie {
   annotations!: EntityTable<Annotation, 'id'>;
   pendingMutations!: EntityTable<PendingMutation, 'id'>;
   pmtiles!: EntityTable<PMTilesArchive, 'key'>;
+  fieldOfflineSnapshots!: EntityTable<FieldOfflineSnapshotRow, 'id'>;
 
   constructor() {
     super('handi');
@@ -89,6 +100,17 @@ class HandiDB extends Dexie {
       annotations: 'id, owner_id, kind, visibility, created_at, updated_at',
       pendingMutations: '++id, kind, createdAt',
       pmtiles: 'key, addedAt, kind, remoteUrl, rasterId, format',
+    });
+
+    this.version(5).stores({
+      points: 'id, owner_id, type, visibility, created_at',
+      zones: 'id, owner_id, status, visibility, created_at',
+      tracks: 'id, owner_id, source, visibility, created_at',
+      rasters: 'id, owner_id, kind, visibility, created_at',
+      annotations: 'id, owner_id, kind, visibility, created_at, updated_at',
+      pendingMutations: '++id, kind, createdAt',
+      pmtiles: 'key, addedAt, kind, remoteUrl, rasterId, format',
+      fieldOfflineSnapshots: 'id, savedAt',
     });
   }
 }

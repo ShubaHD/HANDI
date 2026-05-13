@@ -6,7 +6,11 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { pointDisplayColorFromProps } from '@/features/points/pointStyle';
 import { POINT_TYPES, type Annotation, type PointOfInterest, type RasterOverlay, type Track, type Zone } from '@/lib/types';
 import type { BaseMapDef } from './layers/BaseLayers';
-import { publicUrl, rasterCornersFromBounds, rasterPmtilesHttpUrl } from '@/features/rasters/api';
+import {
+  isRasterPmtilesOverlay,
+  publicUrl,
+  rasterCornersFromBounds,
+} from '@/features/rasters/api';
 import type { CadLayerRow } from '@/features/cad/api';
 import type { RasterLayerState } from '@/map/layers/RasterOverlayLayer';
 import { usesCadLabelRendering } from '@/features/cad/classifyCadLayer';
@@ -316,10 +320,14 @@ export function LeafletView({
     const group = L.layerGroup();
     for (const r of rasters) {
       if (!rasterState.visibleIds.has(r.id)) continue;
-      if (rasterPmtilesHttpUrl(r)) continue;
+      if (isRasterPmtilesOverlay(r)) continue;
       const corners = rasterCornersFromBounds(r.bounds);
       if (!corners) continue;
-      const url = publicUrl(r.storage_path);
+      const override = rasterState.pmtilesUrlByRasterId?.[r.id];
+      const url =
+        typeof override === 'string' && override.trim()
+          ? override.trim()
+          : publicUrl(r.storage_path);
       const bounds = L.latLngBounds(
         [corners.minLat, corners.minLon],
         [corners.maxLat, corners.maxLon],

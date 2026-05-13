@@ -2,6 +2,7 @@ import maplibregl from 'maplibre-gl';
 import { Protocol, PMTiles } from 'pmtiles';
 import { db, type PMTilesArchive } from './db/dexie';
 import type { BaseMapDef } from '@/map/layers/BaseLayers';
+import { publicUrl, rasterCornersFromBounds } from '@/features/rasters/api';
 import { copyFileToMbtilesOpfs, removeMbtilesOpfsFile } from '@/lib/mbtiles/opfsMbtiles';
 import { mbtilesWorkerOpenBuffer, mbtilesWorkerOpenOpfs } from '@/lib/mbtiles/mbtilesWorkerClient';
 import {
@@ -203,6 +204,10 @@ export async function saveRemoteRasterArchive(args: {
   url: string;
   onProgress?: (p: { loaded: number; total?: number }) => void;
 }): Promise<PMTilesArchive> {
+  const key = `raster-${args.rasterId}`;
+  if (await db.pmtiles.get(key)) {
+    await deleteLocalArchive(key);
+  }
   const res = await fetch(args.url, { method: 'GET' });
   if (!res.ok) {
     const hint =
@@ -213,7 +218,6 @@ export async function saveRemoteRasterArchive(args: {
   }
   const blob = await readResponseToBlob(res, args.onProgress);
   const meta = await readArchiveMetadata(blob);
-  const key = `raster-${args.rasterId}`;
   const archive: PMTilesArchive = {
     key,
     name: args.name,
@@ -235,6 +239,61 @@ export async function saveRemoteRasterArchive(args: {
     if (name === 'QuotaExceededError') {
       throw new Error(
         'Spatiu IndexedDB insuficient pentru acest PMTiles. Micsoreaza fisierul sau elibereaza spatiu in browser.',
+        { cause: e },
+      );
+    }
+    throw e;
+  }
+  return archive;
+}
+
+/** Copie locală pentru raster imagine (PNG/JPG etc.) din bucket-ul public. */
+export async function saveRasterImageOffline(args: {
+  rasterId: string;
+  name: string;
+  storagePath: string;
+  bounds: GeoJSON.Polygon;
+  onProgress?: (p: { loaded: number; total?: number }) => void;
+}): Promise<PMTilesArchive> {
+  const key = `raster-${args.rasterId}`;
+  if (await db.pmtiles.get(key)) {
+    await deleteLocalArchive(key);
+  }
+  const url = publicUrl(args.storagePath);
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) {
+    const hint =
+      res.status === 401 || res.status === 403
+        ? ' Verifica ca bucket-ul „raster-overlays” e public sau foloseste URL semnat.'
+        : '';
+    throw new Error(`Download raster failed (${res.status}).${hint}`);
+  }
+  const blob = await readResponseToBlob(res, args.onProgress);
+  const corners = rasterCornersFromBounds(args.bounds);
+  const bounds: [number, number, number, number] | null = corners
+    ? [corners.minLon, corners.minLat, corners.maxLon, corners.maxLat]
+    : null;
+  const archive: PMTilesArchive = {
+    key,
+    name: args.name,
+    blob,
+    size: blob.size,
+    bounds,
+    minzoom: null,
+    maxzoom: null,
+    addedAt: Date.now(),
+    kind: 'raster',
+    remoteUrl: url,
+    rasterId: args.rasterId,
+    format: 'raster_image',
+  };
+  try {
+    await db.pmtiles.put(archive);
+  } catch (e) {
+    const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+    if (name === 'QuotaExceededError') {
+      throw new Error(
+        'Spatiu IndexedDB insuficient pentru acest raster. Micsoreaza fisierul sau elibereaza spatiu in browser.',
         { cause: e },
       );
     }
