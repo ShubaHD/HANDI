@@ -1342,18 +1342,31 @@ export default function FieldPage() {
                             <span className="text-slate-400">url:</span> {p.url}
                           </div>
                           <div>
-                            <span className="text-slate-400">range:</span>{' '}
-                            {p.status ?? 'n/a'} {p.contentRange ? `(${p.contentRange})` : ''}
+                            <span className="text-slate-400">HTTP Range probe:</span>{' '}
+                            {p.status ?? 'n/a'}
+                            {p.contentRange ? ` (${p.contentRange})` : ''}
+                            {p.acceptRanges ? (
+                              <span className="text-slate-500"> accept-ranges={p.acceptRanges}</span>
+                            ) : null}
                           </div>
                           {p.header && (
                             <div>
-                              <span className="text-slate-400">zoom:</span> {p.header.minZoom}..{p.header.maxZoom}{' '}
+                              <span className="text-slate-400">zoom (din arhiva):</span> {p.header.minZoom}..{p.header.maxZoom}{' '}
                               <span className="text-slate-400 ml-2">tileType:</span> {p.header.tileType}
                             </div>
                           )}
                           <div>
-                            <span className="text-slate-400">ok:</span> {p.ok ? 'YES' : 'NO'}
+                            <span className="text-slate-400">arhiva PMTiles:</span> {p.ok ? 'OK' : 'NU'}
                             {p.error ? <span className="text-red-300 ml-2">{p.error}</span> : null}
+                          </div>
+                          <div>
+                            <span className="text-slate-400">206 + Content-Range vizibil:</span>{' '}
+                            {p.byteRangeProbeOk ? 'DA' : 'NU'}
+                            {!p.byteRangeProbeOk && p.ok ? (
+                              <span className="text-amber-200/90 ml-2">
+                                (adesea CORS pe Storage; tile-urile pot merge oricum)
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       ))}

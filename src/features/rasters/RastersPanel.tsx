@@ -73,7 +73,7 @@ export function RastersPanel({
           onClick={onAdd}
           className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm"
         >
-          + Upload raster (termal / LIDAR / ortofoto)
+          + Upload raster (PNG/JPG / GeoTIFF preview / PMTiles)
         </button>
       </div>
 

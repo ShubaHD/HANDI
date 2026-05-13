@@ -28,14 +28,20 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const isPMTiles = Boolean(file?.name.toLowerCase().endsWith('.pmtiles'));
+  const isGeoTiff = Boolean(
+    file &&
+      (/\.(tif|tiff|geotiff)$/i.test(file.name) ||
+        file.type === 'image/tiff' ||
+        file.type === 'image/geotiff'),
+  );
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setError('Alege un fisier (PNG / JPG / PMTiles)');
+      setError('Alege un fisier (PNG / JPG / GeoTIFF / PMTiles)');
       return;
     }
-    const bbox: BBox = isPMTiles
+    const bbox: BBox = isPMTiles || isGeoTiff
       ? { minLon: 0, minLat: 0, maxLon: 0, maxLat: 0 }
       : {
           minLon: parseFloat(minLon),
@@ -43,7 +49,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
           maxLon: parseFloat(maxLon),
           maxLat: parseFloat(maxLat),
         };
-    if (!isPMTiles) {
+    if (!isPMTiles && !isGeoTiff) {
       if (
         !isFinite(bbox.minLon) ||
         !isFinite(bbox.minLat) ||
@@ -61,13 +67,33 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
     setBusy(true);
     setError(null);
     try {
+      let uploadFile = file;
+      let uploadBbox = bbox;
+      let metadata: Record<string, unknown> = isPMTiles
+        ? { format: 'pmtiles' }
+        : { format: 'image' };
+
+      if (isGeoTiff) {
+        const { buildRasterPreviewFromGeoTiff } = await import('@/lib/geotiffRasterPreview');
+        const { jpegBlob, bbox: bb } = await buildRasterPreviewFromGeoTiff(file);
+        uploadFile = new File([jpegBlob], `${file.name.replace(/\.[^.]+$/, '') || 'raster'}-preview.jpg`, {
+          type: 'image/jpeg',
+        });
+        uploadBbox = bb;
+        metadata = {
+          format: 'image',
+          derivedFromGeoTiff: true,
+          originalGeoTiffName: file.name,
+        };
+      }
+
       await uploadRaster({
         name: name.trim() || file.name,
         kind,
-        file,
-        bbox,
+        file: uploadFile,
+        bbox: uploadBbox,
         visibility,
-        metadata: isPMTiles ? { format: 'pmtiles' } : { format: 'image' },
+        metadata,
       });
       onCreated();
     } catch (e) {
@@ -115,16 +141,18 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
       </label>
 
       <label className="block">
-        <span className="text-xs uppercase text-slate-400">Fișier (PNG/JPG georeferențiat sau PMTiles)</span>
+        <span className="text-xs uppercase text-slate-400">
+          Fișier (PNG/JPG, GeoTIFF → preview JPEG, sau PMTiles pentru LiDAR mare)
+        </span>
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp,.pmtiles"
+          accept="image/png,image/jpeg,image/webp,image/tiff,.tif,.tiff,.geotiff,.pmtiles"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200"
         />
       </label>
 
-      {!isPMTiles && (
+      {!isPMTiles && !isGeoTiff && (
         <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs uppercase text-slate-400">Bounding box (lat/lon)</span>

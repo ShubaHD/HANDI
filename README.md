@@ -63,12 +63,28 @@ Aplicație web PWA pentru clubul de speologie. Marchează puncte de interes (pe�
 Pentru LiDAR mare (GeoTIFF), workflow-ul recomandat este:
 
 - **1) Convertește GeoTIFF → PMTiles** (local, Windows):
-  - Instalează QGIS, apoi exportă un **hillshade** (sau un raster vizualizabil) în WGS84 (EPSG:4326) sau WebMercator (EPSG:3857).
-  - Generează tiles și împachetează în `.pmtiles` (un singur fișier).
-- **2) În HANDI**: tab **Rasters** → **Upload raster** → alege fișierul `.pmtiles` → vizibilitate **Club** → salvează.
+  - Instalează QGIS / GDAL, apoi exportă un **hillshade** sau alt raster **vizualizabil (8-bit)**, nu ideal bandă float brută fără scalare.
+  - Tile-urile pentru web trebuie să urmeze grila **Web Mercator (EPSG:3857)** în convenția **XYZ** folosită de MapLibre; împachetare finală **`.pmtiles`** (ex. [go-pmtiles](https://github.com/protomaps/go-pmtiles) `pmtiles convert`).
+- **2) În HANDI**: tab **Rasters** → **Upload raster** → alege fișierul `.pmtiles` (sau, pentru probe rapide, un **GeoTIFF** mic–mediu: aplicația generează un **preview JPEG** georeferențiat; fișiere foarte mari pot dura la primul citiri). Vizibilitate **Club** → salvează.
 - **3) Pe hartă**: activezi overlay-ul din lista de rasters și ajustezi opacitatea.
 
-Notă: conversia GeoTIFF→PMTiles necesită tooling GIS local; aplicația face doar upload + randare (nu rulează GDAL pe server).
+Notă: conversia GeoTIFF→PMTiles necesită tooling GIS local; în browser HANDI poate doar **preview JPEG** din GeoTIFF + upload la fel ca PNG/JPG (fără GDAL pe server).
+
+##### De ce un PMTiles din GeoTIFF poate arăta rău (decalat, gol, un singur zoom)
+
+HANDI citește arhiva așa cum e scrisă: **bounds în WGS84** în antet, tile-uri în **EPSG:3857 / XYZ**. Dacă generarea a fost greșită, simptomul e în fișier, nu în viewer.
+
+**Greșeli frecvente:**
+
+1. **CRS**: GeoTIFF în **Stereo 70 / UTM** sau alt CRS, tile-ate ca și cum ar fi deja 3857. Soluție robustă: `gdalwarp -t_srs EPSG:3857` (sau echivalent în QGIS) **înainte** de a genera piramida de tile-uri. Driverul GDAL [MBTiles](https://gdal.org/drivers/raster/mbtiles.html) lucrează în 3857; totuși e bine să controlezi tu sursa.
+2. **Un singur nivel de zoom**: `gdal_translate -of MBTILES` derivează adesea **un singur zoom** din rezoluția pixelilor (de ex. doar z16), nu intervalul z10–15 din numele fișierului. Pentru **mai multe niveluri** folosește un flux cu piramidă explicită (ex. `gdal2tiles.py` cu `--xyz` / opțiuni Web Mercator, apoi `pmtiles convert` din director sau din MBTiles intermediar). Verifică mereu cu `pmtiles show fisier.pmtiles` ce **minZoom / maxZoom** și **bounds** sunt în arhivă.
+3. **DEM / float**: fără hillshade sau pseudocolor, imaginea poate părea uniformă sau „zgomotată”. Pregătește un raster vizual (hillshade, slope shade, sau RGB) înainte de tile-are.
+4. **NoData și margini**: valori NoData greșite sau lipsă → artefacte la contur.
+5. **Nume vs. conținut**: numele `..._z10-15_...` nu garantează zoom-urile din antet; singura sursă de adevăr e antetul PMTiles (ex. `pmtiles show`).
+
+**Referințe:** [GDAL MBTiles](https://gdal.org/drivers/raster/mbtiles.html), [PMTiles CLI](https://docs.protomaps.com/pmtiles/cli).
+
+**QGIS (orientativ):** *Raster → Generate XYZ tiles (MBTiles)* sau unelte similare, cu profil **Web Mercator** și interval de zoom explicit; dacă obții doar MBTiles, poți apoi rula `pmtiles convert intrare.mbtiles iesire.pmtiles` (vezi documentația go-pmtiles pentru varianta ta de CLI).
 
 ---
 
