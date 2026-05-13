@@ -18,6 +18,23 @@ export interface BaseMapDef {
   pmtilesBounds?: [number, number, number, number] | null;
   /** Din antetul PMTiles; folosit pe sursa raster ca MapLibre să ceară zoom corect. */
   pmtilesMinZoom?: number | null;
+  /** MBTiles local (SQLite in worker + protocol `mbtiles-handi://`). */
+  mbtiles?: boolean;
+  /** Cheie Dexie pentru arhiva MBTiles (nu URL). */
+  mbtilesArchiveKey?: string;
+}
+
+/** Basemap offline raster: PMTiles (blob) sau MBTiles (OPFS/blob). */
+export function isOfflineRasterBasemapBase(base: BaseMapDef): boolean {
+  return Boolean(
+    (base.pmtiles && base.pmtilesUrl) || (base.mbtiles && base.mbtilesArchiveKey),
+  );
+}
+
+function overlayUsesOfflineRaster(ov: BaseMapDef): boolean {
+  return Boolean(
+    (ov.pmtiles && ov.pmtilesUrl) || (ov.mbtiles && ov.mbtilesArchiveKey),
+  );
 }
 
 export const BASE_MAPS: BaseMapDef[] = [
@@ -106,6 +123,38 @@ export interface BuildBaseStyleOptions {
 }
 
 export function buildBaseStyle(base: BaseMapDef, options?: BuildBaseStyleOptions): StyleSpecification {
+  if (base.mbtiles && base.mbtilesArchiveKey) {
+    const enc = encodeURIComponent(base.mbtilesArchiveKey);
+    const minz = base.pmtilesMinZoom;
+    const maxz = base.maxzoom;
+    return {
+      version: 8,
+      glyphs: getMapGlyphsUrl(),
+      sources: {
+        base: {
+          type: 'raster',
+          tiles: [`mbtiles-handi://${enc}/{z}/{x}/{y}`],
+          tileSize: 256,
+          attribution: base.attribution,
+          ...(typeof minz === 'number' && Number.isFinite(minz) ? { minzoom: minz } : {}),
+          ...(typeof maxz === 'number' && Number.isFinite(maxz) ? { maxzoom: maxz } : {}),
+        },
+      },
+      layers: [
+        {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': '#0f172a' },
+        },
+        {
+          id: 'base-layer',
+          type: 'raster',
+          source: 'base',
+        },
+      ],
+    };
+  }
+
   if (base.pmtiles && base.pmtilesUrl) {
     const minz = base.pmtilesMinZoom;
     const maxz = base.maxzoom;
@@ -138,7 +187,7 @@ export function buildBaseStyle(base: BaseMapDef, options?: BuildBaseStyleOptions
   }
 
   const ov = options?.overlay;
-  const hasOverlay = Boolean(ov?.pmtiles && ov.pmtilesUrl);
+  const hasOverlay = Boolean(ov && overlayUsesOfflineRaster(ov));
   const overlayOpacityRaw = options?.overlayOpacity;
   const overlayOpacity =
     typeof overlayOpacityRaw === 'number' && Number.isFinite(overlayOpacityRaw)
@@ -148,6 +197,24 @@ export function buildBaseStyle(base: BaseMapDef, options?: BuildBaseStyleOptions
   if (hasOverlay && ov) {
     const minzO = ov.pmtilesMinZoom;
     const maxzO = ov.maxzoom;
+    const overlaySource =
+      ov.mbtiles && ov.mbtilesArchiveKey
+        ? {
+            type: 'raster' as const,
+            tiles: [`mbtiles-handi://${encodeURIComponent(ov.mbtilesArchiveKey)}/{z}/{x}/{y}`],
+            tileSize: 256,
+            attribution: ov.attribution,
+            ...(typeof minzO === 'number' && Number.isFinite(minzO) ? { minzoom: minzO } : {}),
+            ...(typeof maxzO === 'number' && Number.isFinite(maxzO) ? { maxzoom: maxzO } : {}),
+          }
+        : {
+            type: 'raster' as const,
+            url: `pmtiles://${ov.pmtilesUrl ?? ''}`,
+            tileSize: 256,
+            attribution: ov.attribution,
+            ...(typeof minzO === 'number' && Number.isFinite(minzO) ? { minzoom: minzO } : {}),
+            ...(typeof maxzO === 'number' && Number.isFinite(maxzO) ? { maxzoom: maxzO } : {}),
+          };
     return {
       version: 8,
       glyphs: getMapGlyphsUrl(),
@@ -159,14 +226,7 @@ export function buildBaseStyle(base: BaseMapDef, options?: BuildBaseStyleOptions
           maxzoom: base.maxzoom,
           attribution: base.attribution,
         },
-        basemapPmtilesOverlay: {
-          type: 'raster',
-          url: `pmtiles://${ov.pmtilesUrl}`,
-          tileSize: 256,
-          attribution: ov.attribution,
-          ...(typeof minzO === 'number' && Number.isFinite(minzO) ? { minzoom: minzO } : {}),
-          ...(typeof maxzO === 'number' && Number.isFinite(maxzO) ? { maxzoom: maxzO } : {}),
-        },
+        basemapPmtilesOverlay: overlaySource,
       },
       layers: [
         {

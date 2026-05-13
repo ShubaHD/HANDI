@@ -24,7 +24,8 @@ export interface PendingMutation {
 export interface PMTilesArchive {
   key: string;
   name: string;
-  blob: Blob;
+  /** Obligatoriu pentru arhive PMTiles în IndexedDB; pentru MBTiles poate lipsi dacă fișierul e în OPFS. */
+  blob?: Blob;
   size: number;
   bounds: [number, number, number, number] | null;
   minzoom: number | null;
@@ -33,6 +34,10 @@ export interface PMTilesArchive {
   kind?: 'basemap' | 'raster';
   remoteUrl?: string;
   rasterId?: string;
+  /** Implicit `pmtiles` pentru înregistrări vechi fără câmp. */
+  format?: 'pmtiles' | 'mbtiles';
+  /** Cale relativă în OPFS, ex. `handi-mbtiles/<key>.mbtiles` (fără slash inițial). */
+  opfsRelPath?: string;
 }
 
 class HandiDB extends Dexie {
@@ -74,6 +79,16 @@ class HandiDB extends Dexie {
       annotations: 'id, owner_id, kind, visibility, created_at, updated_at',
       pendingMutations: '++id, kind, createdAt',
       pmtiles: 'key, addedAt, kind, remoteUrl, rasterId',
+    });
+
+    this.version(4).stores({
+      points: 'id, owner_id, type, visibility, created_at',
+      zones: 'id, owner_id, status, visibility, created_at',
+      tracks: 'id, owner_id, source, visibility, created_at',
+      rasters: 'id, owner_id, kind, visibility, created_at',
+      annotations: 'id, owner_id, kind, visibility, created_at, updated_at',
+      pendingMutations: '++id, kind, createdAt',
+      pmtiles: 'key, addedAt, kind, remoteUrl, rasterId, format',
     });
   }
 }

@@ -6,6 +6,7 @@ import {
   deleteLocalArchive,
   saveGeneratedBasemapBlob,
   saveLocalArchive,
+  saveLocalMbtilesArchive,
 } from '@/lib/pmtiles';
 import {
   baseMapMetaForPack,
@@ -119,7 +120,11 @@ export function BaseMapSwitcher({
     setImporting(true);
     setError(null);
     try {
-      await saveLocalArchive(file);
+      if (file.name.toLowerCase().endsWith('.mbtiles')) {
+        await saveLocalMbtilesArchive(file);
+      } else {
+        await saveLocalArchive(file);
+      }
       await refreshOffline();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import esuat');
@@ -208,7 +213,7 @@ export function BaseMapSwitcher({
               ca PMTiles local. Daca OTM sau Esri esueaza (CORS), incearca Carto. Pentru zone mari sau politici
               stricte: genereaza PMTiles pe PC (vezi{' '}
               <code className="text-slate-300">npm run verify:offline-pmtiles-workflow</code>
-              ) si importa .pmtiles mai jos. PMTiles e doar in{' '}
+              ) si importa .pmtiles sau .mbtiles mai jos. PMTiles/MBTiles raster e doar in{' '}
               <span className="text-slate-300">MapLibre</span> — dupa „Genereaza & salveaza” comutam la MapLibre
               si selectam noul basemap.
             </p>
@@ -353,12 +358,12 @@ export function BaseMapSwitcher({
       )}
 
       <div className="flex items-center justify-between mt-4 mb-2">
-        <h3 className="text-xs font-semibold uppercase text-slate-400">Harta offline (PMTiles)</h3>
+        <h3 className="text-xs font-semibold uppercase text-slate-400">Harta offline (PMTiles / MBTiles)</h3>
         <label className="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 cursor-pointer">
           {importing ? '...' : '+ adauga'}
           <input
             type="file"
-            accept=".pmtiles,application/octet-stream"
+            accept=".pmtiles,.mbtiles,application/octet-stream"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -370,7 +375,7 @@ export function BaseMapSwitcher({
       </div>
       {offlineBases.length === 0 ? (
         <div className="text-xs text-slate-500 italic px-2 py-1.5">
-          Nicio harta offline. Adauga un fisier .pmtiles ca sa lucrezi fara semnal.
+          Nicio harta offline. Adauga un fisier .pmtiles sau .mbtiles ca sa lucrezi fara semnal.
         </div>
       ) : (
         <div className="space-y-1.5">

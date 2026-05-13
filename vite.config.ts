@@ -5,6 +5,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
 export default defineConfig({
+  optimizeDeps: {
+    exclude: ['@sqlite.org/sqlite-wasm'],
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -88,5 +91,16 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      /** `credentialless` keeps SharedArrayBuffer for sqlite OPFS without blocking typical map tile/CDN loads like `require-corp` often does. */
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
   },
 });

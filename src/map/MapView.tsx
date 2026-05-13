@@ -4,11 +4,17 @@ import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { cadLabelLockedFromStyle } from '@/features/cad/cadLayerLabelStyle';
 import { buildBaseMapsFromArchives, ensurePMTilesProtocol } from '@/lib/pmtiles';
+import { ensureMBTilesProtocol } from '@/lib/mbtiles/mbtilesProtocol';
 import { mapAcceptsOverlayLayers } from '@/map/mapOverlayReadiness';
-import { buildBaseStyle, getBaseMapById, getDefaultBaseMap, type BaseMapDef } from './layers/BaseLayers';
+import {
+  buildBaseStyle,
+  getBaseMapById,
+  getDefaultBaseMap,
+  isOfflineRasterBasemapBase,
+  type BaseMapDef,
+} from './layers/BaseLayers';
 import { LeafletView } from './LeafletView';
 
-ensurePMTilesProtocol();
 import {
   addHillshadeOverlay,
   setHillshadeOpacity,
@@ -41,9 +47,12 @@ import {
   titleFromProps,
 } from './MapHoverTooltip';
 
-/** fitBounds poate coborî zoom-ul sub minzoom-ul arhivei PMTiles → raster negru. */
+ensurePMTilesProtocol();
+ensureMBTilesProtocol();
+
+/** fitBounds poate coborî zoom-ul sub minzoom-ul arhivei offline raster → raster negru. */
 function clampZoomForPmtilesBasemap(map: MlMap, base: BaseMapDef) {
-  if (!base.pmtiles || !base.pmtilesUrl) return;
+  if (!isOfflineRasterBasemapBase(base)) return;
   const minZ =
     typeof base.pmtilesMinZoom === 'number' && Number.isFinite(base.pmtilesMinZoom)
       ? base.pmtilesMinZoom
@@ -202,7 +211,7 @@ export function MapView({
   const forceLeaflet = Boolean(maplibreQs?.has('leaflet'));
   const forceMaplibre = Boolean(maplibreQs?.has('maplibre'));
   const basemapNeedsMapLibre =
-    !basemapReady || Boolean(base.pmtiles && base.pmtilesUrl);
+    !basemapReady || isOfflineRasterBasemapBase(base);
   /** Leaflet implicit; MapLibre forțat cu ?maplibre=1 sau când basemap-ul e PMTiles (offline). */
   const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
 
@@ -303,8 +312,8 @@ export function MapView({
   }, [basemapReady, useLeaflet]);
 
   useEffect(() => {
-    if (base.pmtiles && base.pmtilesUrl) setBasemapOverlay(null);
-  }, [base.id, base.pmtiles, base.pmtilesUrl]);
+    if (isOfflineRasterBasemapBase(base)) setBasemapOverlay(null);
+  }, [base.id, base.pmtiles, base.pmtilesUrl, base.mbtiles, base.mbtilesArchiveKey]);
 
   useEffect(() => {
     try {
@@ -804,7 +813,7 @@ export function MapView({
      */
     const runInstallWhenStyleReady = () => {
       const applyPmtilesViewport = () => {
-        if (!base.pmtiles || !base.pmtilesUrl) return;
+        if (!isOfflineRasterBasemapBase(base)) return;
         const b = base.pmtilesBounds;
         if (Array.isArray(b) && b.length === 4 && b.every((x) => typeof x === 'number' && Number.isFinite(x))) {
           const maxZ = Math.min(base.maxzoom ?? 18, 19);
@@ -1270,7 +1279,7 @@ export function MapView({
               setBase(b);
               setShowSwitcher(false);
             }}
-            enablePmtilesOverlay={!(base.pmtiles && base.pmtilesUrl)}
+            enablePmtilesOverlay={!isOfflineRasterBasemapBase(base)}
             basemapOverlay={basemapOverlay}
             onBasemapOverlayChange={setBasemapOverlay}
             basemapOverlayOpacity={basemapOverlayOpacity}

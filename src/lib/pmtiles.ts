@@ -2,6 +2,13 @@ import maplibregl from 'maplibre-gl';
 import { Protocol, PMTiles } from 'pmtiles';
 import { db, type PMTilesArchive } from './db/dexie';
 import type { BaseMapDef } from '@/map/layers/BaseLayers';
+import { copyFileToMbtilesOpfs, removeMbtilesOpfsFile } from '@/lib/mbtiles/opfsMbtiles';
+import { mbtilesWorkerOpenBuffer, mbtilesWorkerOpenOpfs } from '@/lib/mbtiles/mbtilesWorkerClient';
+import {
+  invalidateMbtilesWorkerKey,
+  registerMbtilesKeyOpened,
+} from '@/lib/mbtiles/mbtilesProtocol';
+import type { MbtilesOpenResult } from '@/lib/mbtiles/mbtilesWorkerTypes';
 
 let registered = false;
 const protocol = new Protocol({ metadata: true });
@@ -48,6 +55,7 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
     maxzoom: meta.maxzoom,
     addedAt: Date.now(),
     kind: 'basemap',
+    format: 'pmtiles',
   };
   try {
     await db.pmtiles.put(archive);
@@ -61,6 +69,65 @@ export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
     }
     throw e;
   }
+  return archive;
+}
+
+export async function saveLocalMbtilesArchive(file: File): Promise<PMTilesArchive> {
+  const key = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const baseName = file.name.replace(/\.mbtiles$/i, '');
+  let meta: MbtilesOpenResult;
+  let opfsRelPath: string | undefined;
+  let blob: Blob | undefined;
+  const isolated = globalThis.crossOriginIsolated === true;
+
+  try {
+    if (isolated && typeof navigator !== 'undefined' && navigator.storage && 'getDirectory' in navigator.storage) {
+      opfsRelPath = await copyFileToMbtilesOpfs(file, key);
+      meta = await mbtilesWorkerOpenOpfs(key, `/${opfsRelPath}`);
+    } else {
+      const buf = await file.arrayBuffer();
+      blob = new Blob([buf]);
+      meta = await mbtilesWorkerOpenBuffer(key, buf);
+    }
+  } catch (e) {
+    if (opfsRelPath) {
+      await removeMbtilesOpfsFile(opfsRelPath).catch(() => {});
+    }
+    throw e;
+  }
+
+  const archive: PMTilesArchive = {
+    key,
+    name: baseName,
+    blob,
+    size: file.size,
+    bounds: meta.bounds,
+    minzoom: meta.minzoom,
+    maxzoom: meta.maxzoom,
+    addedAt: Date.now(),
+    kind: 'basemap',
+    format: 'mbtiles',
+    opfsRelPath,
+  };
+
+  try {
+    await db.pmtiles.put(archive);
+  } catch (e) {
+    invalidateMbtilesWorkerKey(key);
+    if (opfsRelPath) {
+      await removeMbtilesOpfsFile(opfsRelPath).catch(() => {});
+    }
+    const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+    if (name === 'QuotaExceededError') {
+      throw new Error(
+        'Spatiu IndexedDB insuficient. Sterge alte harti offline sau micsoreaza fisierul.',
+        { cause: e },
+      );
+    }
+    throw e;
+  }
+
+  registerMbtilesKeyOpened(key);
   return archive;
 }
 
@@ -79,15 +146,25 @@ export async function getRasterArchiveByRasterId(rasterId: string): Promise<PMTi
 }
 
 export async function deleteLocalArchive(key: string): Promise<void> {
+  const row = await db.pmtiles.get(key);
   const url = blobUrlByKey.get(key);
   if (url) {
     URL.revokeObjectURL(url);
     blobUrlByKey.delete(key);
   }
+  if (row?.format === 'mbtiles') {
+    invalidateMbtilesWorkerKey(key);
+    if (row.opfsRelPath) {
+      await removeMbtilesOpfsFile(row.opfsRelPath).catch(() => {});
+    }
+  }
   await db.pmtiles.delete(key);
 }
 
 export function archiveBlobUrl(arch: PMTilesArchive): string {
+  if (!arch.blob) {
+    throw new Error('PMTiles: lipseste blob-ul in IndexedDB.');
+  }
   let url = blobUrlByKey.get(arch.key);
   if (!url) {
     url = URL.createObjectURL(arch.blob);
@@ -149,6 +226,7 @@ export async function saveRemoteRasterArchive(args: {
     kind: 'raster',
     remoteUrl: args.url,
     rasterId: args.rasterId,
+    format: 'pmtiles',
   };
   try {
     await db.pmtiles.put(archive);
@@ -196,10 +274,11 @@ export async function buildBaseMapsFromArchives(): Promise<BaseMapDef[]> {
   return archs.map((a) => archiveToBaseMap(a));
 }
 
-/** Unele înregistrări au `size` 0 în DB dar `blob.size` corect (sau invers); folosim maximul. */
+/** Unele înregistrări au `size` 0 în DB dar `blob.size` corect (sau invers); MBTiles în OPFS folosește doar `size`. */
 function effectiveArchiveBytes(a: PMTilesArchive): number {
   const n = typeof a.size === 'number' && Number.isFinite(a.size) ? a.size : 0;
   const b = a.blob instanceof Blob && Number.isFinite(a.blob.size) ? a.blob.size : 0;
+  if (a.format === 'mbtiles' && !a.blob) return n;
   return Math.max(n, b, 0);
 }
 
@@ -212,12 +291,28 @@ function formatArchiveSizeBytes(bytes: number): string {
 }
 
 function archiveToBaseMap(a: PMTilesArchive): BaseMapDef {
-  const url = archiveBlobUrl(a);
   const bytes = effectiveArchiveBytes(a);
+  const zoomLabel = `${a.minzoom ?? '?'}-${a.maxzoom ?? '?'}`;
+  if (a.format === 'mbtiles') {
+    return {
+      id: `pmtiles-${a.key}`,
+      label: `Offline: ${a.name}`,
+      description: `${formatArchiveSizeBytes(bytes)} - MBTiles local (zoom ${zoomLabel})`,
+      attribution: '© OpenStreetMap contributors / MBTiles',
+      tileUrls: [],
+      maxzoom: a.maxzoom ?? 14,
+      mbtiles: true,
+      mbtilesArchiveKey: a.key,
+      pmtilesBounds: a.bounds,
+      pmtilesMinZoom: a.minzoom,
+      pmtiles: false,
+    };
+  }
+  const url = archiveBlobUrl(a);
   return {
     id: `pmtiles-${a.key}`,
     label: `Offline: ${a.name}`,
-    description: `${formatArchiveSizeBytes(bytes)} - PMTiles local (zoom ${a.minzoom ?? '?'}-${a.maxzoom ?? '?'})`,
+    description: `${formatArchiveSizeBytes(bytes)} - PMTiles local (zoom ${zoomLabel})`,
     attribution: '© OpenStreetMap contributors / PMTiles',
     tileUrls: [],
     maxzoom: a.maxzoom ?? 14,
@@ -242,6 +337,7 @@ export async function saveGeneratedBasemapBlob(blob: Blob, name: string): Promis
     maxzoom: meta.maxzoom,
     addedAt: Date.now(),
     kind: 'basemap',
+    format: 'pmtiles',
   };
   try {
     await db.pmtiles.put(archive);
