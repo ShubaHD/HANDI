@@ -70,6 +70,19 @@ function annotPreviewLabel(a: Annotation): string {
   return `Simbol ${a.symbol ?? ''}`;
 }
 
+/** PMTiles pe raster tab: afișează notă doar când harta e în mod Leaflet implicit (fără ?maplibre=1). */
+function shouldSuggestPmtilesMaplibreUrlHint(): boolean {
+  if (typeof window === 'undefined') return false;
+  const q = new URLSearchParams(window.location.search);
+  if (q.has('maplibre') && !q.has('leaflet')) return false;
+  try {
+    if (localStorage.getItem('handi-basemap')?.startsWith('pmtiles-')) return false;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
 interface PendingPoint {
   lat: number;
   lon: number;
@@ -1036,18 +1049,11 @@ export default function FieldPage() {
                   return next;
                 });
 
-                // If user enables a PMTiles raster, force MapLibre renderer (Leaflet cannot render PMTiles).
                 try {
                   const r = rasters.find((x) => x.id === id);
                   const enabling = !rasterVisible.has(id);
                   const pmUrl = r ? rasterPmtilesHttpUrl(r) : null;
                   const isPMTiles = Boolean(pmUrl);
-                  const qs = new URLSearchParams(window.location.search);
-                  if (enabling && isPMTiles && !qs.has('maplibre') && !qs.has('leaflet')) {
-                    qs.set('maplibre', '1');
-                    const nextUrl = `${window.location.pathname}?${qs.toString()}${window.location.hash ?? ''}`;
-                    window.history.replaceState({}, '', nextUrl);
-                  }
 
                   // When enabling, also read PMTiles header to set correct min/max zoom (many archives are z16-only).
                   if (enabling && isPMTiles && pmUrl) {
@@ -1110,6 +1116,7 @@ export default function FieldPage() {
                 await deleteRasterArchive(r.id);
                 setOfflinePmtilesById(await buildRasterUrlOverrides());
               }}
+              pmtilesMaplibreHint={shouldSuggestPmtilesMaplibreUrlHint()}
               onZoomTo={async (r) => {
                 const pmUrl = rasterPmtilesHttpUrl(r);
                 if (pmUrl) {

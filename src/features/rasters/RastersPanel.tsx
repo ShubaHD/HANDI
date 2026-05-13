@@ -29,6 +29,8 @@ interface Props {
   onDeleteOfflinePmtiles: (r: RasterOverlay) => Promise<void>;
   offlinePmtilesById: Record<string, string>;
   onChanged: () => void;
+  /** Pe Leaflet implicit, PMTiles nu se randă; afișează notă cu ?maplibre=1. */
+  pmtilesMaplibreHint?: boolean;
 }
 
 export function RastersPanel({
@@ -43,6 +45,7 @@ export function RastersPanel({
   onDeleteOfflinePmtiles,
   offlinePmtilesById,
   onChanged,
+  pmtilesMaplibreHint = false,
 }: Props) {
   const ask = useAppConfirm();
   const [saving, setSaving] = useState<Record<string, { loaded: number; total?: number }>>({});
@@ -178,6 +181,12 @@ export function RastersPanel({
                       {saving[r.id].total
                         ? ` / ${Math.round((saving[r.id].total! / 1024 / 1024) * 10) / 10} MB`
                         : ''}
+                    </div>
+                  )}
+                  {pmtilesMaplibreHint && isPmtiles[r.id] && (
+                    <div className="mt-1 ml-5 text-[10px] leading-snug text-slate-500">
+                      PMTiles pe hartă: adaugă manual <span className="font-mono text-slate-400">?maplibre=1</span> la URL
+                      (sau scoate <span className="font-mono">?leaflet=1</span>).
                     </div>
                   )}
                   {isOn && (
