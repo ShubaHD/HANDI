@@ -21,6 +21,11 @@ proj4.defs(
   'EPSG:31700',
   '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=krass +towgs84=28,-121,-77,0,0,0,0 +units=m +no_defs',
 );
+/** WGS 84 / Pseudo-Mercator (Google Maps, multe ortofoto „3857”). */
+proj4.defs(
+  'EPSG:3857',
+  '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +k=1 +x_0=0 +y_0=0 +units=m +no_defs',
+);
 
 const PREVIEW_MAX = 2048;
 const JPEG_QUALITY = 0.86;
@@ -29,10 +34,29 @@ function geoKeysToEpsg(image: GeoImage): string | null {
   const gk = image.getGeoKeys();
   if (!gk) return null;
   const p = gk.ProjectedCSTypeGeoKey;
-  if (typeof p === 'number' && p > 0 && p !== 32767) return `EPSG:${p}`;
+  if (typeof p === 'number' && p > 0 && p !== 32767) {
+    return normalizeGridEpsg(`EPSG:${p}`);
+  }
   const g = gk.GeographicTypeGeoKey;
-  if (typeof g === 'number' && g > 0 && g !== 32767) return `EPSG:${g}`;
+  if (typeof g === 'number' && g > 0 && g !== 32767) {
+    return normalizeGridEpsg(`EPSG:${g}`);
+  }
   return null;
+}
+
+/** Coduri echivalente Web Mercator folosite în GeoTIFF-uri vechi. */
+function normalizeGridEpsg(epsg: string): string {
+  const u = epsg.toUpperCase();
+  if (
+    u === 'EPSG:900913' ||
+    u === 'EPSG:3785' ||
+    u === 'EPSG:102113' ||
+    u === 'EPSG:102100' ||
+    u === 'EPSG:3857'
+  ) {
+    return 'EPSG:3857';
+  }
+  return epsg;
 }
 
 function bboxToWgs84(minX: number, minY: number, maxX: number, maxY: number, fromCrs: string): BBox {
@@ -73,11 +97,13 @@ function resolveSourceCrs(image: GeoImage): string {
   );
 }
 
-/** `auto` = din GeoKeys / euristică; altfel forțează CRS pentru bbox (metri Stereo70). */
-export type GeoTiffCrsMode = 'auto' | 'EPSG:3844' | 'EPSG:31700';
+/** `auto` = din GeoKeys / euristică; altfel forțează CRS pentru bbox. */
+export type GeoTiffCrsMode = 'auto' | 'EPSG:3857' | 'EPSG:3844' | 'EPSG:31700';
 
 function resolveCrsForBBox(image: GeoImage, mode: GeoTiffCrsMode): string {
-  if (mode === 'EPSG:3844' || mode === 'EPSG:31700') return mode;
+  if (mode === 'EPSG:3844' || mode === 'EPSG:31700' || mode === 'EPSG:3857') return mode;
+  const fromKeys = geoKeysToEpsg(image);
+  if (fromKeys) return fromKeys;
   return resolveSourceCrs(image);
 }
 

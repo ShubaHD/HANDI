@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { buildRasterPreviewFromGeoTiff, type GeoTiffCrsMode } from '@/lib/geotiffRasterPreview';
 import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
 import { uploadRaster, type BBox } from './api';
@@ -8,7 +8,7 @@ const GEOTIFF_CRS_STORAGE_KEY = 'handi-geotiff-crs-mode';
 function readStoredGeoTiffCrsMode(): GeoTiffCrsMode {
   try {
     const v = localStorage.getItem(GEOTIFF_CRS_STORAGE_KEY);
-    if (v === 'EPSG:3844' || v === 'EPSG:31700' || v === 'auto') return v;
+    if (v === 'EPSG:3844' || v === 'EPSG:31700' || v === 'EPSG:3857' || v === 'auto') return v;
   } catch {
     /* ignore */
   }
@@ -48,6 +48,16 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [geoTiffCrsMode, setGeoTiffCrsMode] = useState<GeoTiffCrsMode>(() => readStoredGeoTiffCrsMode());
+
+  /** Fișiere „*_3857*” sunt aproape mereu Web Mercator — evită decalaj dacă metadata lipsește. */
+  useEffect(() => {
+    if (!file) return;
+    const n = file.name.toLowerCase();
+    if (!/\.(tif|tiff|geotiff)$/.test(n)) return;
+    if (n.includes('3857') || n.includes('webmerc') || n.includes('pseudo')) {
+      setGeoTiffCrsMode((prev) => (prev === 'auto' ? 'EPSG:3857' : prev));
+    }
+  }, [file]);
 
   const isPMTiles = Boolean(file?.name.toLowerCase().endsWith('.pmtiles'));
   const isGeoTiff = Boolean(
@@ -179,7 +189,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
       {isGeoTiff && (
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2">
           <div className="text-[11px] uppercase text-slate-500 mb-1">CRS GeoTIFF (pentru bbox)</div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => {
@@ -197,6 +207,20 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
             <button
               type="button"
               onClick={() => {
+                setGeoTiffCrsMode('EPSG:3857');
+                persistGeoTiffCrsMode('EPSG:3857');
+              }}
+              className={`py-2 rounded-lg text-xs border ${
+                geoTiffCrsMode === 'EPSG:3857'
+                  ? 'bg-brand-600 border-brand-500 text-white'
+                  : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              EPSG:3857 (Web Mercator)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setGeoTiffCrsMode('EPSG:3844');
                 persistGeoTiffCrsMode('EPSG:3844');
               }}
@@ -206,7 +230,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              EPSG:3844
+              EPSG:3844 (Stereo70)
             </button>
             <button
               type="button"
@@ -220,12 +244,13 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              EPSG:31700
+              EPSG:31700 (Stereo70 vechi)
             </button>
           </div>
           <p className="mt-1 text-[10px] text-slate-500 leading-snug">
-            Dacă GeoTIFF-ul nu are CRS în metadata sau poziția e greșită, forțează Stereo70. Alegerea rămâne salvată pe
-            acest dispozitiv (ca la import CAD).
+            Decalaj mare: ortofoto/tile în <strong className="text-slate-400">3857</strong>; date naționale în{' '}
+            <strong className="text-slate-400">3844</strong> sau <strong className="text-slate-400">31700</strong>. Numele
+            cu „3857” setează automat Web Mercator dacă ești pe Auto. Alegerea se salvează la click pe un CRS.
           </p>
         </div>
       )}
