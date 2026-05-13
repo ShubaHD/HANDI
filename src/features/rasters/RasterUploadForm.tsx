@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { RasterKind, Visibility } from '@/lib/types';
+import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
 import { uploadRaster, type BBox } from './api';
 
 const KIND_LABELS: Record<RasterKind, string> = {
@@ -11,7 +11,7 @@ const KIND_LABELS: Record<RasterKind, string> = {
 
 interface Props {
   defaultBbox?: BBox | null;
-  onCreated: () => void;
+  onCreated: (r: RasterOverlay) => void;
   onCancel: () => void;
 }
 
@@ -87,7 +87,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
         };
       }
 
-      await uploadRaster({
+      const created = await uploadRaster({
         name: name.trim() || file.name,
         kind,
         file: uploadFile,
@@ -95,7 +95,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
         visibility,
         metadata,
       });
-      onCreated();
+      onCreated(created);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload esuat');
     } finally {

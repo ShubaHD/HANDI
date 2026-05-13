@@ -14,6 +14,7 @@ import {
   fetchRasters,
   rasterCornersFromBounds,
   rasterPmtilesHttpUrl,
+  suggestZoomForBoundsCorners,
   type BBox,
 } from '@/features/rasters/api';
 import type { PointOfInterest, RasterOverlay, Track, Zone } from '@/lib/types';
@@ -1071,6 +1072,20 @@ export default function FieldPage() {
                         /* ignore */
                       }
                     })();
+                  } else if (enabling && r && !isPMTiles) {
+                    const c = rasterCornersFromBounds(r.bounds);
+                    if (c) {
+                      setFitBounds([
+                        [c.minLon, c.minLat],
+                        [c.maxLon, c.maxLat],
+                      ]);
+                      const z = suggestZoomForBoundsCorners(c);
+                      setFlyTo({
+                        lng: (c.minLon + c.maxLon) / 2,
+                        lat: (c.minLat + c.maxLat) / 2,
+                        zoom: z,
+                      });
+                    }
                   }
                 } catch {
                   /* ignore */
@@ -1123,6 +1138,11 @@ export default function FieldPage() {
                   [c.minLon, c.minLat],
                   [c.maxLon, c.maxLat],
                 ]);
+                setFlyTo({
+                  lng: (c.minLon + c.maxLon) / 2,
+                  lat: (c.minLat + c.maxLat) / 2,
+                  zoom: suggestZoomForBoundsCorners(c),
+                });
                 setRasterVisible((prev) => new Set(prev).add(r.id));
                 setSidebarOpen(false);
               }}
@@ -1266,8 +1286,21 @@ export default function FieldPage() {
           <Modal>
             <RasterUploadForm
               defaultBbox={currentBbox}
-              onCreated={() => {
+              onCreated={(created) => {
                 setShowRasterUpload(false);
+                const c = rasterCornersFromBounds(created.bounds);
+                if (c) {
+                  setFitBounds([
+                    [c.minLon, c.minLat],
+                    [c.maxLon, c.maxLat],
+                  ]);
+                  setFlyTo({
+                    lng: (c.minLon + c.maxLon) / 2,
+                    lat: (c.minLat + c.maxLat) / 2,
+                    zoom: suggestZoomForBoundsCorners(c),
+                  });
+                }
+                setRasterVisible((prev) => new Set(prev).add(created.id));
                 void reload();
               }}
               onCancel={() => setShowRasterUpload(false)}

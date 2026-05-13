@@ -123,6 +123,23 @@ export function rasterPmtilesHttpUrl(r: RasterOverlay): string | null {
   return null;
 }
 
+/** Zoom orientativ ca să încapă un bbox (~grade) în viewport. */
+export function suggestZoomForBoundsCorners(c: {
+  minLon: number;
+  minLat: number;
+  maxLon: number;
+  maxLat: number;
+}): number {
+  const span = Math.max(Math.abs(c.maxLon - c.minLon), Math.abs(c.maxLat - c.minLat));
+  if (!Number.isFinite(span) || span <= 0) return 14;
+  if (span > 4) return 7;
+  if (span > 1) return 9;
+  if (span > 0.25) return 11;
+  if (span > 0.06) return 13;
+  if (span > 0.015) return 15;
+  return 16;
+}
+
 export function rasterCornersFromBounds(bounds: GeoJSON.Polygon): {
   minLon: number;
   minLat: number;
