@@ -29,6 +29,26 @@ import { createPointsBulk } from '@/features/points/api';
 import { parsePointsCsvToInputs } from '@/features/points/csvImport';
 import { POINT_TYPES, type PointType } from '@/lib/types';
 
+const CAD_CRS_STORAGE_KEY = 'handi-cad-source-crs';
+
+function readStoredCadSourceCrs(): Stereo70SourceCrs {
+  try {
+    const v = localStorage.getItem(CAD_CRS_STORAGE_KEY);
+    if (v === 'EPSG:31700' || v === 'EPSG:3844') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'EPSG:3844';
+}
+
+function persistCadSourceCrs(c: Stereo70SourceCrs) {
+  try {
+    localStorage.setItem(CAD_CRS_STORAGE_KEY, c);
+  } catch {
+    /* ignore */
+  }
+}
+
 const CAD_KIND_LABEL: Record<CadLayerRow['kind'], string> = {
   caves: 'Peșteri',
   dolines: 'Doline',
@@ -99,7 +119,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [lastDiag, setLastDiag] = useState<{ fileName: string; d: DxfParseDiagnostics } | null>(null);
-  const [sourceCrs, setSourceCrs] = useState<Stereo70SourceCrs>('EPSG:3844');
+  const [sourceCrs, setSourceCrs] = useState<Stereo70SourceCrs>(() => readStoredCadSourceCrs());
   const [importingPoints, setImportingPoints] = useState(false);
   const [pointsMsg, setPointsMsg] = useState<string | null>(null);
   const [csvPointType, setCsvPointType] = useState<PointType>('cave');
@@ -280,7 +300,10 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setSourceCrs('EPSG:3844')}
+                  onClick={() => {
+                    setSourceCrs('EPSG:3844');
+                    persistCadSourceCrs('EPSG:3844');
+                  }}
                   className={`py-2 rounded-lg text-xs border ${
                     sourceCrs === 'EPSG:3844'
                       ? 'bg-brand-600 border-brand-500 text-white'
@@ -291,7 +314,10 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSourceCrs('EPSG:31700')}
+                  onClick={() => {
+                    setSourceCrs('EPSG:31700');
+                    persistCadSourceCrs('EPSG:31700');
+                  }}
                   className={`py-2 rounded-lg text-xs border ${
                     sourceCrs === 'EPSG:31700'
                       ? 'bg-brand-600 border-brand-500 text-white'
@@ -302,7 +328,8 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                 </button>
               </div>
               <div className="mt-1 text-[10px] text-slate-500">
-                Dacă ai decalaj ~120m spre Est pe basemap, încearcă EPSG:31700.
+                Alegerea se păstrează pe acest dispozitiv (inclusiv după schimbarea tab-ului). Dacă ai decalaj ~120m
+                spre Est pe basemap, încearcă EPSG:31700.
               </div>
             </div>
 

@@ -73,6 +73,14 @@ function resolveSourceCrs(image: GeoImage): string {
   );
 }
 
+/** `auto` = din GeoKeys / euristică; altfel forțează CRS pentru bbox (metri Stereo70). */
+export type GeoTiffCrsMode = 'auto' | 'EPSG:3844' | 'EPSG:31700';
+
+function resolveCrsForBBox(image: GeoImage, mode: GeoTiffCrsMode): string {
+  if (mode === 'EPSG:3844' || mode === 'EPSG:31700') return mode;
+  return resolveSourceCrs(image);
+}
+
 function isNoData(v: number, nodata: number | null): boolean {
   if (Number.isNaN(v)) return true;
   if (nodata == null || !Number.isFinite(nodata)) return false;
@@ -156,10 +164,14 @@ function interleavedToImageData(
  * Construiește un JPEG georeferențiat (bbox WGS84) din GeoTIFF, pentru overlay ImageSource.
  * Folosește citiri parțiale (blob slice) — poate procesa și fișiere mari, dar durează la primul decode.
  */
-export async function buildRasterPreviewFromGeoTiff(file: File): Promise<{
+export async function buildRasterPreviewFromGeoTiff(
+  file: File,
+  opts?: { crsMode?: GeoTiffCrsMode },
+): Promise<{
   jpegBlob: Blob;
   bbox: BBox;
 }> {
+  const crsMode = opts?.crsMode ?? 'auto';
   const tiff = await fromBlob(file);
   try {
     const image = (await tiff.getImage(0)) as GeoImage;
@@ -169,7 +181,7 @@ export async function buildRasterPreviewFromGeoTiff(file: File): Promise<{
     const outW = Math.max(1, Math.round(iw * scale));
     const outH = Math.max(1, Math.round(ih * scale));
 
-    const fromCrs = resolveSourceCrs(image);
+    const fromCrs = resolveCrsForBBox(image, crsMode);
     const [minX, minY, maxX, maxY] = image.getBoundingBox();
     const bbox = bboxToWgs84(minX, minY, maxX, maxY, fromCrs);
 

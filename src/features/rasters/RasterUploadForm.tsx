@@ -1,6 +1,27 @@
 import { useState, type FormEvent } from 'react';
+import type { GeoTiffCrsMode } from '@/lib/geotiffRasterPreview';
 import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
 import { uploadRaster, type BBox } from './api';
+
+const GEOTIFF_CRS_STORAGE_KEY = 'handi-geotiff-crs-mode';
+
+function readStoredGeoTiffCrsMode(): GeoTiffCrsMode {
+  try {
+    const v = localStorage.getItem(GEOTIFF_CRS_STORAGE_KEY);
+    if (v === 'EPSG:3844' || v === 'EPSG:31700' || v === 'auto') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'auto';
+}
+
+function persistGeoTiffCrsMode(m: GeoTiffCrsMode) {
+  try {
+    localStorage.setItem(GEOTIFF_CRS_STORAGE_KEY, m);
+  } catch {
+    /* ignore */
+  }
+}
 
 const KIND_LABELS: Record<RasterKind, string> = {
   thermal: 'Termal (drona)',
@@ -26,6 +47,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
   const [maxLat, setMaxLat] = useState(defaultBbox ? String(defaultBbox.maxLat) : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [geoTiffCrsMode, setGeoTiffCrsMode] = useState<GeoTiffCrsMode>(() => readStoredGeoTiffCrsMode());
 
   const isPMTiles = Boolean(file?.name.toLowerCase().endsWith('.pmtiles'));
   const isGeoTiff = Boolean(
@@ -75,7 +97,9 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
 
       if (isGeoTiff) {
         const { buildRasterPreviewFromGeoTiff } = await import('@/lib/geotiffRasterPreview');
-        const { jpegBlob, bbox: bb } = await buildRasterPreviewFromGeoTiff(file);
+        const { jpegBlob, bbox: bb } = await buildRasterPreviewFromGeoTiff(file, {
+          crsMode: geoTiffCrsMode,
+        });
         uploadFile = new File([jpegBlob], `${file.name.replace(/\.[^.]+$/, '') || 'raster'}-preview.jpg`, {
           type: 'image/jpeg',
         });
@@ -84,6 +108,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
           format: 'image',
           derivedFromGeoTiff: true,
           originalGeoTiffName: file.name,
+          geoTiffCrsMode,
         };
       }
 
@@ -151,6 +176,60 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
           className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200"
         />
       </label>
+
+      {isGeoTiff && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2">
+          <div className="text-[11px] uppercase text-slate-500 mb-1">CRS GeoTIFF (pentru bbox)</div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => {
+                setGeoTiffCrsMode('auto');
+                persistGeoTiffCrsMode('auto');
+              }}
+              className={`py-2 rounded-lg text-xs border ${
+                geoTiffCrsMode === 'auto'
+                  ? 'bg-brand-600 border-brand-500 text-white'
+                  : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              Auto (din fișier)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGeoTiffCrsMode('EPSG:3844');
+                persistGeoTiffCrsMode('EPSG:3844');
+              }}
+              className={`py-2 rounded-lg text-xs border ${
+                geoTiffCrsMode === 'EPSG:3844'
+                  ? 'bg-brand-600 border-brand-500 text-white'
+                  : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              EPSG:3844
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGeoTiffCrsMode('EPSG:31700');
+                persistGeoTiffCrsMode('EPSG:31700');
+              }}
+              className={`py-2 rounded-lg text-xs border ${
+                geoTiffCrsMode === 'EPSG:31700'
+                  ? 'bg-brand-600 border-brand-500 text-white'
+                  : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              EPSG:31700
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-slate-500 leading-snug">
+            Dacă GeoTIFF-ul nu are CRS în metadata sau poziția e greșită, forțează Stereo70. Alegerea rămâne salvată pe
+            acest dispozitiv (ca la import CAD).
+          </p>
+        </div>
+      )}
 
       {!isPMTiles && !isGeoTiff && (
         <div>
