@@ -2,19 +2,8 @@ import proj4 from 'proj4';
 import DxfParser from 'dxf-parser';
 import { lineString, simplify } from '@turf/turf';
 import type { Feature, FeatureCollection, Point, Polygon } from 'geojson';
+import '@/lib/ensureRomaniaStereo70Proj';
 import { isJunkCadPlaceholderLabel, normalizeCadMapLabelString } from './cadMapLabels';
-
-proj4.defs(
-  'EPSG:3844',
-  '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
-);
-
-// Dealul Piscului 1970 / Stereo 70 (deprecated EPSG:31700), commonly used legacy datum (Krassowsky 1940).
-// Parameters from EPSG and widely used PROJ.4 definitions. Accuracy depends on source data.
-proj4.defs(
-  'EPSG:31700',
-  '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=krass +towgs84=28,-121,-77,0,0,0,0 +units=m +no_defs',
-);
 
 type XY = { x: number; y: number; z?: number };
 

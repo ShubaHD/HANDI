@@ -1,13 +1,6 @@
 import proj4 from 'proj4';
 import DxfParser from 'dxf-parser';
-
-// EPSG:3844 Stereo70 (Romania) -> WGS84
-// Source parameters are widely used; if club uses a slightly different definition,
-// we can adjust the proj string.
-proj4.defs(
-  'EPSG:3844',
-  '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
-);
+import '@/lib/ensureRomaniaStereo70Proj';
 
 type XY = { x: number; y: number };
 

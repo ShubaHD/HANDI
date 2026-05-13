@@ -1,6 +1,7 @@
 import { fromBlob, type TypedArray } from 'geotiff';
 import proj4 from 'proj4';
 import type { BBox } from '@/features/rasters/api';
+import './ensureRomaniaStereo70Proj';
 
 /** Subset din GeoTIFFImage pentru tipare fără import de modul intern. */
 type GeoImage = {
@@ -13,14 +14,6 @@ type GeoImage = {
   getGDALNoData: () => number | null;
 };
 
-proj4.defs(
-  'EPSG:3844',
-  '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
-);
-proj4.defs(
-  'EPSG:31700',
-  '+proj=sterea +lat_0=46 +lon_0=25 +k=0.99975 +x_0=500000 +y_0=500000 +ellps=krass +towgs84=28,-121,-77,0,0,0,0 +units=m +no_defs',
-);
 /** WGS 84 / Pseudo-Mercator (Google Maps, multe ortofoto „3857”). */
 proj4.defs(
   'EPSG:3857',

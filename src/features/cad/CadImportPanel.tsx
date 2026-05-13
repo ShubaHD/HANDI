@@ -310,7 +310,7 @@ export function CadImportPanel({ cadImports, cadLayers, onRefresh, onZoomTo }: P
                       : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
-                  EPSG:3844 (Stereo70 modern)
+                  EPSG:3844 (Stereo70 ANCPI)
                 </button>
                 <button
                   type="button"
