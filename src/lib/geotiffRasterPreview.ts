@@ -76,12 +76,56 @@ proj4.defs(
 const PREVIEW_MAX = 2048;
 const JPEG_QUALITY = 0.86;
 
-function geoKeysToEpsg(image: GeoImage): string | null {
+function citationGeoKeysBlob(gk: Partial<Record<string, unknown>>): string {
+  const keys = ['PCSCitationGeoKey', 'GeogCitationGeoKey', 'GTCitationGeoKey'] as const;
+  const parts: string[] = [];
+  for (const k of keys) {
+    const v = gk[k];
+    if (typeof v === 'string' && v.trim()) parts.push(v);
+  }
+  return parts.join('\n').toUpperCase();
+}
+
+/** PCS fără EPSG explicit (0 / lipsă / 32767 = user-defined). */
+function projectedCrsIsCustomOrMissing(p: unknown): boolean {
+  return !(typeof p === 'number' && p > 0 && p !== 32767);
+}
+
+/**
+ * Stereo 70 pe datum Dealul Piscului 1970 ⇒ EPSG:31700 (nu 3844 = Pulkovo 1942(58) / ANCPI).
+ * Ex.: ArcGIS „STEREOGRAPHIC_M_DP1970”, GCS_Dealul_Piscului_1970, GeoKey Geog 4317 + PCS custom.
+ */
+function inferDealulPiscului1970Stereo70Grid(gk: Partial<Record<string, unknown>>): boolean {
+  if (!projectedCrsIsCustomOrMissing(gk.ProjectedCSTypeGeoKey)) return false;
+  if (gk.GeographicTypeGeoKey === 4317) return true;
+  const c = citationGeoKeysBlob(gk);
+  if (!c) return false;
+  return (
+    c.includes('DP1970') ||
+    c.includes('STEREOGRAPHIC_M_DP') ||
+    c.includes('PISCULUI_1970') ||
+    c.includes('GCS_DEALUL') ||
+    c.includes('D_DEALUL_PISCULUI') ||
+    (c.includes('DEALUL') && c.includes('PISCUL'))
+  );
+}
+
+function geoKeysToEpsg(
+  image: GeoImage,
+  projectedBounds: [number, number, number, number],
+): string | null {
   const gk = image.getGeoKeys();
   if (!gk) return null;
   const p = gk.ProjectedCSTypeGeoKey;
   if (typeof p === 'number' && p > 0 && p !== 32767) {
     return normalizeGridEpsg(`EPSG:${p}`);
+  }
+  const [minX, minY, maxX, maxY] = projectedBounds;
+  if (
+    inferDealulPiscului1970Stereo70Grid(gk) &&
+    !bboxLooksLikeGeographicDegrees(minX, minY, maxX, maxY)
+  ) {
+    return 'EPSG:31700';
   }
   const g = gk.GeographicTypeGeoKey;
   if (typeof g === 'number' && g > 0 && g !== 32767) {
@@ -129,10 +173,11 @@ function bboxToWgs84(minX: number, minY: number, maxX: number, maxY: number, fro
   return { minLon, minLat, maxLon, maxLat };
 }
 
-function resolveSourceCrs(image: GeoImage): string {
-  const fromKeys = geoKeysToEpsg(image);
+function resolveSourceCrs(image: GeoImage, projectedBounds?: [number, number, number, number]): string {
+  const extent = projectedBounds ?? getProjectedBoundingBox(image);
+  const fromKeys = geoKeysToEpsg(image, extent);
   if (fromKeys) return fromKeys;
-  const [minX, minY, maxX, maxY] = getProjectedBoundingBox(image);
+  const [minX, minY, maxX, maxY] = extent;
   const spanX = Math.abs(maxX - minX);
   const spanY = Math.abs(maxY - minY);
   if (spanX <= 360 && spanY <= 180 && spanX > 1e-6 && spanY > 1e-6) {
@@ -148,9 +193,10 @@ export type GeoTiffCrsMode = 'auto' | 'EPSG:3857' | 'EPSG:3844' | 'EPSG:31700';
 
 function resolveCrsForBBox(image: GeoImage, mode: GeoTiffCrsMode): string {
   if (mode === 'EPSG:3844' || mode === 'EPSG:31700' || mode === 'EPSG:3857') return mode;
-  const fromKeys = geoKeysToEpsg(image);
+  const extent = getProjectedBoundingBox(image);
+  const fromKeys = geoKeysToEpsg(image, extent);
   if (fromKeys) return fromKeys;
-  return resolveSourceCrs(image);
+  return resolveSourceCrs(image, extent);
 }
 
 /**

@@ -49,13 +49,22 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [geoTiffCrsMode, setGeoTiffCrsMode] = useState<GeoTiffCrsMode>(() => readStoredGeoTiffCrsMode());
 
-  /** Fișiere „*_3857*” sunt aproape mereu Web Mercator — evită decalaj dacă metadata lipsește. */
+  /** Fișiere „*_3857*” → Web Mercator; „dp1970” / „dealul”+„pisc” → Stereo70 Dealul Piscului (EPSG:31700). */
   useEffect(() => {
     if (!file) return;
     const n = file.name.toLowerCase();
     if (!/\.(tif|tiff|geotiff)$/.test(n)) return;
     if (n.includes('3857') || n.includes('webmerc') || n.includes('pseudo')) {
       setGeoTiffCrsMode((prev) => (prev === 'auto' ? 'EPSG:3857' : prev));
+      return;
+    }
+    if (
+      n.includes('dp1970') ||
+      n.includes('piscului') ||
+      (n.includes('dealul') && n.includes('pisc')) ||
+      n.includes('stereographic_m_dp')
+    ) {
+      setGeoTiffCrsMode((prev) => (prev === 'auto' ? 'EPSG:31700' : prev));
     }
   }, [file]);
 
@@ -230,7 +239,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              EPSG:3844 (Stereo70)
+              EPSG:3844 (Stereo70 / ANCPI, Pulkovo 1942(58))
             </button>
             <button
               type="button"
@@ -244,16 +253,17 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
                   : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              EPSG:31700 (Stereo70 vechi)
+              EPSG:31700 (Dealul Piscului 1970 / Stereo70)
             </button>
           </div>
           <p className="mt-1 text-[10px] text-slate-500 leading-snug">
-            <strong className="text-slate-400">31700 / 3844</strong> doar dacă valorile din TIF sunt în{' '}
-            <em>metri</em> Stereo70 (ex. 400000–700000), nu pentru fișiere deja în grade WGS84 — altfel imaginea sare
-            complet. Ortofoto / LiDAR tipic: <strong className="text-slate-400">3857</strong> sau{' '}
-            <strong className="text-slate-400">Auto</strong>. Numele cu „3857” setează automat Web Mercator pe Auto.
-            Bbox-ul se calculează corect și pentru GeoTIFF cu <strong className="text-slate-400">RasterPixelIsPoint</strong>;
-            dacă tot vezi decalaj mic, șterge rasterul vechi și <strong className="text-slate-400">reîncarcă</strong> fișierul.
+            <strong className="text-slate-400">3844</strong> = Pulkovo 1942(58) / ANCPI;{' '}
+            <strong className="text-slate-400">31700</strong> = Dealul Piscului 1970 (ex. LiDAR „STEREOGRAPHIC_M_DP1970”,
+            GCS_Dealul_Piscului_1970). Ambele folosesc metri Stereo70 (~400000–700000), nu grade WGS84. Ortofoto Web
+            Mercator: <strong className="text-slate-400">3857</strong> sau <strong className="text-slate-400">Auto</strong>.
+            Numele cu „3857” / „dp1970” / „piscului” setează CRS pe Auto. Bbox corect și pentru{' '}
+            <strong className="text-slate-400">RasterPixelIsPoint</strong>; după update,{' '}
+            <strong className="text-slate-400">reîncarcă</strong> GeoTIFF-ul ca să se refacă limitele.
           </p>
         </div>
       )}
