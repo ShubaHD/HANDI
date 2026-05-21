@@ -212,8 +212,8 @@ export function MapView({
   const forceMaplibre = Boolean(maplibreQs?.has('maplibre'));
   const basemapNeedsMapLibre =
     !basemapReady || isOfflineRasterBasemapBase(base);
-  /** MapLibre implicit (PMTiles, CAD, raster tiles). Leaflet doar cu ?leaflet=1. */
-  const useLeaflet = !basemapNeedsMapLibre && forceLeaflet && !forceMaplibre;
+  /** Leaflet implicit (basemap online fiabil). MapLibre: ?maplibre=1 sau basemap PMTiles offline. */
+  const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
 
   const clearHover = () => {
     if (hoverTimerRef.current) {
@@ -451,11 +451,28 @@ export function MapView({
     }
 
     let gotIdle = false;
+    let basemapFallbackDone = false;
+    const tryFallbackBasemap = (reason: string) => {
+      if (basemapFallbackDone || gotIdle) return;
+      if (base.id === 'opentopomap' || base.id === 'esri-sat' || base.id === 'osm') {
+        basemapFallbackDone = true;
+        const carto = getBaseMapById('carto-voyager');
+        if (carto) {
+          console.warn(`[MapView] ${reason} — comut la Carto Voyager`);
+          setBase(carto);
+          setMapDebug({
+            msg: 'OpenTopoMap/OSM indisponibil în browser — am trecut la Carto Voyager. Schimbă harta din stânga sus.',
+          });
+        }
+      }
+    };
     const debugTimer = window.setTimeout(() => {
       if (gotIdle) return;
+      tryFallbackBasemap('Basemap fără idle');
+      if (gotIdle || basemapFallbackDone) return;
       const canvas = map.getCanvas();
       setMapDebug({
-        msg: `Basemap nu a randat (idle) in timp util. Canvas ${canvas?.width ?? 0}x${canvas?.height ?? 0}. Verifica WebGL / CORS in Console.`,
+        msg: `Basemap nu a randat (idle) in timp util. Canvas ${canvas?.width ?? 0}x${canvas?.height ?? 0}. Încearcă Carto Voyager sau ?leaflet=1`,
       });
     }, 3500);
 
@@ -532,10 +549,13 @@ export function MapView({
     };
 
     map.on('error', (e) => {
-      // Surface MapLibre issues in production where basemap looks blank.
       console.error('[map] error', e?.error ?? e);
       const err = (e as unknown as { error?: { message?: string } }).error?.message;
-      if (err) setMapDebug({ msg: `Map error: ${err}` });
+      if (err?.toLowerCase().includes('failed to fetch') || err?.toLowerCase().includes('tile')) {
+        tryFallbackBasemap(err);
+      } else if (err) {
+        setMapDebug({ msg: `Map error: ${err}` });
+      }
     });
 
     map.on('idle', () => {

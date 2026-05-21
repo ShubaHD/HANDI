@@ -635,7 +635,7 @@ export default function FieldPage() {
                   const forceLeaflet = Boolean(qs.has('leaflet'));
                   const forceMaplibre = Boolean(qs.has('maplibre'));
                   const renderer: 'maplibre' | 'leaflet' =
-                    forceLeaflet && !forceMaplibre ? 'leaflet' : 'maplibre';
+                    forceLeaflet || !forceMaplibre ? 'leaflet' : 'maplibre';
 
                   const pmtilesRasters = rasters
                     .filter((r) => rasterVisible.has(r.id) && isRasterPmtilesOverlay(r))
