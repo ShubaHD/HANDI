@@ -75,13 +75,20 @@ const GEOTIFF_MISSING_AFFINE_HELP =
   '(2) ArcMap: Copy Raster / Export Raster Data către un nou GeoTIFF și verifică în QGIS că rasterul se deschide corect fără să adaugi manual .tfw. ' +
   '(3) Alternativ: PNG/JPG + bounding box manual, sau PMTiles.';
 
+/** geotiff.js returnează adesea Float64Array, nu Array — Array.isArray() e false. */
+function hasNumericLength(v: unknown, minLen: number): boolean {
+  if (v == null || typeof v !== 'object' || !('length' in v)) return false;
+  const len = (v as { length: number }).length;
+  return typeof len === 'number' && len >= minLen && Number.isFinite((v as { 0?: number })[0] as number);
+}
+
 function geoTiffHasEmbeddedPixelToWorldTransform(image: GeoImage): boolean {
   const fd = image.getFileDirectory();
-  const mt = fd.getValue('ModelTransformation') as number[] | undefined;
-  if (mt && Array.isArray(mt) && mt.length >= 16 && Number.isFinite(mt[0] as number)) return true;
-  const tp = fd.getValue('ModelTiepoint') as number[] | undefined;
-  const ps = fd.getValue('ModelPixelScale') as number[] | undefined;
-  return Boolean(tp && tp.length === 6 && ps && Array.isArray(ps) && ps.length >= 2);
+  const mt = fd.getValue('ModelTransformation');
+  if (hasNumericLength(mt, 16)) return true;
+  const tp = fd.getValue('ModelTiepoint');
+  const ps = fd.getValue('ModelPixelScale');
+  return hasNumericLength(tp, 6) && hasNumericLength(ps, 2);
 }
 
 function assertGeoTiffEmbeddedTransform(image: GeoImage): void {
