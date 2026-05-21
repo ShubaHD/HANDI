@@ -1394,6 +1394,9 @@ export default function FieldPage() {
           <Modal>
             <RasterUploadForm
               defaultBbox={currentBbox}
+              onLocalPmtilesReady={async () => {
+                setOfflinePmtilesById(await buildRasterUrlOverrides());
+              }}
               onCreated={(created) => {
                 setShowRasterUpload(false);
                 const c = rasterCornersFromBounds(created.bounds);
@@ -1402,10 +1405,15 @@ export default function FieldPage() {
                     [c.minLon, c.minLat],
                     [c.maxLon, c.maxLat],
                   ]);
+                  const meta = created.metadata as { maxzoom?: number } | null | undefined;
+                  const z =
+                    typeof meta?.maxzoom === 'number' && Number.isFinite(meta.maxzoom)
+                      ? meta.maxzoom
+                      : suggestZoomForBoundsCorners(c);
                   setFlyTo({
                     lng: (c.minLon + c.maxLon) / 2,
                     lat: (c.minLat + c.maxLat) / 2,
-                    zoom: suggestZoomForBoundsCorners(c),
+                    zoom: z,
                   });
                 }
                 setRasterVisible((prev) => new Set(prev).add(created.id));

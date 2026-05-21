@@ -42,6 +42,48 @@ export async function readArchiveMetadata(blob: Blob): Promise<PMTilesHeaderLite
   }
 }
 
+/** PMTiles raster overlay: copie în IndexedDB (fără Supabase Storage). */
+export async function saveLocalPmtilesRasterFromFile(args: {
+  rasterId: string;
+  name: string;
+  file: File;
+}): Promise<PMTilesArchive> {
+  const key = `raster-${args.rasterId}`;
+  if (await db.pmtiles.get(key)) {
+    await deleteLocalArchive(key);
+  }
+  const blob = await args.file.arrayBuffer().then((b) => new Blob([b], { type: 'application/vnd.pmtiles' }));
+  const meta = await readArchiveMetadata(blob);
+  const archive: PMTilesArchive = {
+    key,
+    name: args.name,
+    blob,
+    size: blob.size,
+    bounds: meta.bounds,
+    minzoom: meta.minzoom,
+    maxzoom: meta.maxzoom,
+    addedAt: Date.now(),
+    kind: 'raster',
+    rasterId: args.rasterId,
+    format: 'pmtiles',
+  };
+  try {
+    await db.pmtiles.put(archive);
+  } catch (e) {
+    const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+    if (name === 'QuotaExceededError') {
+      throw new Error(
+        'Spatiu IndexedDB insuficient pentru acest PMTiles (~' +
+          Math.round(args.file.size / (1024 * 1024)) +
+          ' MB). Sterge alte arhive offline sau foloseste un fisier mai mic.',
+        { cause: e },
+      );
+    }
+    throw e;
+  }
+  return archive;
+}
+
 export async function saveLocalArchive(file: File): Promise<PMTilesArchive> {
   const blob = await file.arrayBuffer().then((b) => new Blob([b]));
   const meta = await readArchiveMetadata(blob);

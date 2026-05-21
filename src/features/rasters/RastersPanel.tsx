@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { RasterKind, RasterOverlay } from '@/lib/types';
+import { deleteRasterArchive } from '@/lib/pmtiles';
 import { deleteRaster, isRasterPmtilesOverlay, rasterPmtilesHttpUrl } from './api';
 
 const KIND_LABELS: Record<RasterKind, string> = {
@@ -73,6 +74,7 @@ export function RastersPanel({
   const remove = async (r: RasterOverlay) => {
     if (!(await ask(`Stergi raster overlay "${r.name}"?`))) return;
     try {
+      await deleteRasterArchive(r.id).catch(() => {});
       await deleteRaster(r);
       onChanged();
     } catch (e) {

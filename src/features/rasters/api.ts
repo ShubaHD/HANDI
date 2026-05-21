@@ -3,6 +3,11 @@ import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
 
 const BUCKET = 'raster-overlays';
 
+/** Sub limita tipică Supabase Storage (~50 MB pe plan gratuit). */
+export const MAX_RASTER_CLOUD_UPLOAD_BYTES = 48 * 1024 * 1024;
+
+const LOCAL_ONLY_PREFIX = 'local-only/';
+
 export interface BBox {
   minLon: number;
   minLat: number;
@@ -101,8 +106,49 @@ export async function uploadRaster(input: UploadRasterInput): Promise<RasterOver
   return rowToRaster(data as unknown as RasterRow);
 }
 
+export function isLocalOnlyPmtilesRaster(r: RasterOverlay): boolean {
+  const meta = r.metadata as { localOnly?: unknown } | null | undefined;
+  if (meta?.localOnly === true) return true;
+  return r.storage_path.startsWith(LOCAL_ONLY_PREFIX);
+}
+
+/** Înregistrare raster PMTiles fără upload Storage (fișier mare, doar IndexedDB pe dispozitiv). */
+export async function createLocalPmtilesRasterOverlay(input: {
+  name: string;
+  kind: RasterKind;
+  bbox: BBox;
+  visibility: Visibility;
+  metadata?: Record<string, unknown>;
+}): Promise<RasterOverlay> {
+  const { data: u } = await supabase.auth.getUser();
+  const userId = u.user?.id;
+  if (!userId) throw new Error('Trebuie sa fii autentificat');
+
+  const id = crypto.randomUUID();
+  const storage_path = `${LOCAL_ONLY_PREFIX}${userId}/${id}.pmtiles`;
+  const wkt = bboxToWKT(input.bbox);
+  const { data, error } = await supabase
+    .from('raster_overlays')
+    .insert({
+      owner_id: userId,
+      name: input.name,
+      kind: input.kind,
+      storage_path,
+      bounds: `SRID=4326;${wkt}`,
+      captured_at: null,
+      metadata: { format: 'pmtiles', localOnly: true, ...(input.metadata ?? {}) },
+      visibility: input.visibility,
+    })
+    .select(SELECT_COLS)
+    .single();
+  if (error) throw error;
+  return rowToRaster(data as unknown as RasterRow);
+}
+
 export async function deleteRaster(r: RasterOverlay): Promise<void> {
-  await supabase.storage.from(BUCKET).remove([r.storage_path]).catch(() => {});
+  if (!isLocalOnlyPmtilesRaster(r)) {
+    await supabase.storage.from(BUCKET).remove([r.storage_path]).catch(() => {});
+  }
   const { error } = await supabase.from('raster_overlays').delete().eq('id', r.id);
   if (error) throw error;
 }
@@ -132,10 +178,13 @@ export function isRasterPmtilesOverlay(r: RasterOverlay): boolean {
  */
 export function rasterPmtilesHttpUrl(r: RasterOverlay): string | null {
   if (!isRasterPmtilesOverlay(r)) return null;
+  if (isLocalOnlyPmtilesRaster(r)) return null;
   const meta = r.metadata as { pmtiles_url?: unknown } | null | undefined;
   const fromMeta = meta?.pmtiles_url;
   if (typeof fromMeta === 'string' && fromMeta.trim()) return fromMeta.trim();
-  if (r.storage_path) return publicUrl(r.storage_path);
+  if (r.storage_path && !r.storage_path.startsWith(LOCAL_ONLY_PREFIX)) {
+    return publicUrl(r.storage_path);
+  }
   return null;
 }
 
