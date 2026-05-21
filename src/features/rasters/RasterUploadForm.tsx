@@ -2,12 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { buildRasterPreviewFromGeoTiff, type GeoTiffCrsMode } from '@/lib/geotiffRasterPreview';
 import { readArchiveMetadata, saveLocalPmtilesRasterFromFile } from '@/lib/pmtiles';
 import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
-import {
-  createLocalPmtilesRasterOverlay,
-  MAX_RASTER_CLOUD_UPLOAD_BYTES,
-  uploadRaster,
-  type BBox,
-} from './api';
+import { createLocalPmtilesRasterOverlay, uploadRaster, type BBox } from './api';
 
 const GEOTIFF_CRS_STORAGE_KEY = 'handi-geotiff-crs-mode';
 
@@ -62,6 +57,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onLocalPmtilesReady, 
     maxzoom: number | null;
     sizeMb: number;
   } | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   /** Fișiere „*_3857*” → Web Mercator; „dp1970” / „dealul”+„pisc” → Stereo70 Dealul Piscului (EPSG:31700). */
   useEffect(() => {
@@ -155,6 +151,7 @@ export function RasterUploadForm({ defaultBbox, onCreated, onLocalPmtilesReady, 
     }
     setBusy(true);
     setError(null);
+    setImportStatus(null);
     try {
       let uploadFile = file;
       let uploadBbox = bbox;
@@ -173,27 +170,25 @@ export function RasterUploadForm({ defaultBbox, onCreated, onLocalPmtilesReady, 
           ...(pm.minzoom != null && { minzoom: pm.minzoom }),
           ...(pm.maxzoom != null && { maxzoom: pm.maxzoom }),
         };
-        const useLocalOnly = file.size > MAX_RASTER_CLOUD_UPLOAD_BYTES;
-
-        if (useLocalOnly) {
-          const created = await createLocalPmtilesRasterOverlay({
-            name: name.trim() || file.name,
-            kind,
-            bbox: uploadBbox,
-            visibility,
-            metadata: pmMeta,
-          });
-          await saveLocalPmtilesRasterFromFile({
-            rasterId: created.id,
-            name: created.name,
-            file,
-          });
-          await onLocalPmtilesReady?.();
-          onCreated(created);
-          return;
-        }
-
-        metadata = { format: 'pmtiles', ...pmMeta };
+        // PMTiles: mereu import local (IndexedDB). Supabase Storage are ~50 MB limit — nu încercăm upload cloud.
+        setImportStatus(
+          `Se copiază ${(file.size / (1024 * 1024)).toFixed(0)} MB în browser… poate dura câteva minute. Nu închide tab-ul.`,
+        );
+        const created = await createLocalPmtilesRasterOverlay({
+          name: name.trim() || file.name,
+          kind,
+          bbox: uploadBbox,
+          visibility,
+          metadata: pmMeta,
+        });
+        await saveLocalPmtilesRasterFromFile({
+          rasterId: created.id,
+          name: created.name,
+          file,
+        });
+        await onLocalPmtilesReady?.();
+        onCreated(created);
+        return;
       } else if (isGeoTiff) {
         const preview = await buildRasterPreviewFromGeoTiff(file, {
           crsMode: geoTiffCrsMode,
@@ -226,23 +221,10 @@ export function RasterUploadForm({ defaultBbox, onCreated, onLocalPmtilesReady, 
       });
       onCreated(created);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Upload esuat';
-      if (
-        isPMTiles &&
-        file &&
-        (msg.toLowerCase().includes('maximum allowed size') ||
-          msg.toLowerCase().includes('entity too large') ||
-          msg.toLowerCase().includes('payload too large'))
-      ) {
-        setError(
-          `${msg} — Fișierul (${(file.size / (1024 * 1024)).toFixed(0)} MB) depășește limita Supabase (~48 MB). ` +
-            'Repornește aplicația după update: Handi importă automat PMTiles mari doar local (fără cloud).',
-        );
-      } else {
-        setError(msg);
-      }
+      setError(e instanceof Error ? e.message : 'Import esuat');
     } finally {
       setBusy(false);
+      setImportStatus(null);
     }
   };
 
@@ -296,37 +278,22 @@ export function RasterUploadForm({ defaultBbox, onCreated, onLocalPmtilesReady, 
       </label>
 
       {isPMTiles && pmtilesMeta && (
-        <div
-          className={`rounded-lg border p-2 text-[11px] leading-snug ${
-            pmtilesMeta.sizeMb * 1024 * 1024 > MAX_RASTER_CLOUD_UPLOAD_BYTES
-              ? 'border-amber-800/60 bg-amber-950/30 text-amber-100'
-              : 'border-emerald-900/60 bg-emerald-950/30 text-slate-300'
-          }`}
-        >
+        <div className="rounded-lg border border-sky-800/60 bg-sky-950/30 p-2 text-[11px] text-slate-300 leading-snug">
           <div>
-            <strong
-              className={
-                pmtilesMeta.sizeMb * 1024 * 1024 > MAX_RASTER_CLOUD_UPLOAD_BYTES
-                  ? 'text-amber-400'
-                  : 'text-emerald-400'
-              }
-            >
-              PMTiles OK
-            </strong>{' '}
-            — {pmtilesMeta.sizeMb.toFixed(1)} MB, zoom {pmtilesMeta.minzoom ?? '?'}…{pmtilesMeta.maxzoom ?? '?'}
+            <strong className="text-sky-400">PMTiles OK</strong> — {pmtilesMeta.sizeMb.toFixed(1)} MB, zoom{' '}
+            {pmtilesMeta.minzoom ?? '?'}…{pmtilesMeta.maxzoom ?? '?'}
           </div>
-          {pmtilesMeta.sizeMb * 1024 * 1024 > MAX_RASTER_CLOUD_UPLOAD_BYTES ? (
-            <p className="mt-1">
-              Peste limita cloud Supabase (~48 MB) → la <strong>Salvează</strong> se importă{' '}
-              <strong>doar pe acest dispozitiv</strong> (IndexedDB). Nu se sincronizează cu alți utilizatori; pe alt PC
-              trebuie copiat fișierul din nou. Durează câteva minute la ~450 MB.
-            </p>
-          ) : (
-            <p className="mt-1 text-slate-500">
-              Se încarcă în cloud (club). Randare în <span className="font-mono text-slate-400">?maplibre=1</span>.
-            </p>
-          )}
+          <p className="mt-1">
+            <strong className="text-slate-200">Nu e o eroare de limită.</strong> Fișierul ({pmtilesMeta.sizeMb.toFixed(0)}{' '}
+            MB) se salvează <strong className="text-slate-200">local în browser</strong>, nu în Supabase (~50 MB max acolo).
+            Apasă <strong className="text-slate-200">Import local</strong> mai jos. Hartă:{' '}
+            <span className="font-mono text-slate-400">?maplibre=1</span>
+          </p>
         </div>
+      )}
+
+      {importStatus && (
+        <div className="text-sm text-sky-300 animate-pulse">{importStatus}</div>
       )}
 
       {isGeoTiff && (
@@ -501,7 +468,13 @@ export function RasterUploadForm({ defaultBbox, onCreated, onLocalPmtilesReady, 
           disabled={busy || !file}
           className="flex-1 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-700 font-medium"
         >
-          {busy ? 'Upload...' : 'Salveaza'}
+          {busy
+            ? isPMTiles
+              ? 'Import local…'
+              : 'Upload...'
+            : isPMTiles
+              ? 'Import local'
+              : 'Salveaza'}
         </button>
       </div>
     </form>

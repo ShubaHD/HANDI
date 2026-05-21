@@ -2,7 +2,12 @@ import { useMemo, useState } from 'react';
 import { useAppConfirm } from '@/components/ConfirmProvider';
 import type { RasterKind, RasterOverlay } from '@/lib/types';
 import { deleteRasterArchive } from '@/lib/pmtiles';
-import { deleteRaster, isRasterPmtilesOverlay, rasterPmtilesHttpUrl } from './api';
+import {
+  deleteRaster,
+  isLocalOnlyPmtilesRaster,
+  isRasterPmtilesOverlay,
+  rasterPmtilesHttpUrl,
+} from './api';
 
 const KIND_LABELS: Record<RasterKind, string> = {
   thermal: 'Termal',
@@ -66,7 +71,7 @@ export function RastersPanel({
   const canSaveOfflineBlob = useMemo(() => {
     const m: Record<string, boolean> = {};
     for (const r of rasters) {
-      m[r.id] = Boolean(rasterPmtilesHttpUrl(r) || r.storage_path);
+      m[r.id] = Boolean(rasterPmtilesHttpUrl(r) && !isLocalOnlyPmtilesRaster(r));
     }
     return m;
   }, [rasters]);
@@ -126,6 +131,9 @@ export function RastersPanel({
                         {KIND_LABELS[r.kind]}
                         {r.visibility === 'private' && (
                           <span className="ml-2 text-amber-400">[privat]</span>
+                        )}
+                        {isLocalOnlyPmtilesRaster(r) && (
+                          <span className="ml-2 text-sky-400">[local]</span>
                         )}
                         {r.captured_at && (
                           <span className="ml-2 font-mono">
