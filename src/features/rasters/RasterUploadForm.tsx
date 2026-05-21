@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { buildRasterPreviewFromGeoTiff, type GeoTiffCrsMode } from '@/lib/geotiffRasterPreview';
+import { readArchiveMetadata } from '@/lib/pmtiles';
 import type { RasterKind, RasterOverlay, Visibility } from '@/lib/types';
 import { uploadRaster, type BBox } from './api';
 
@@ -48,6 +49,12 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [geoTiffCrsMode, setGeoTiffCrsMode] = useState<GeoTiffCrsMode>(() => readStoredGeoTiffCrsMode());
+  const [pmtilesMeta, setPmtilesMeta] = useState<{
+    bounds: [number, number, number, number];
+    minzoom: number | null;
+    maxzoom: number | null;
+    sizeMb: number;
+  } | null>(null);
 
   /** Fișiere „*_3857*” → Web Mercator; „dp1970” / „dealul”+„pisc” → Stereo70 Dealul Piscului (EPSG:31700). */
   useEffect(() => {
@@ -66,6 +73,40 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
     ) {
       setGeoTiffCrsMode((prev) => (prev === 'auto' ? 'EPSG:31700' : prev));
     }
+  }, [file]);
+
+  useEffect(() => {
+    if (!file?.name.toLowerCase().endsWith('.pmtiles')) {
+      setPmtilesMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void readArchiveMetadata(file)
+      .then((m) => {
+        if (cancelled) return;
+        if (!m.bounds) {
+          setPmtilesMeta(null);
+          setError('PMTiles fără bounds în antet — regenerează arhiva (gdal / pmtiles convert).');
+          return;
+        }
+        setError(null);
+        setPmtilesMeta({
+          bounds: m.bounds,
+          minzoom: m.minzoom,
+          maxzoom: m.maxzoom,
+          sizeMb: file.size / (1024 * 1024),
+        });
+        setKind((k) => (k === 'orthophoto' || k === 'lidar_hillshade' ? k : 'orthophoto'));
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setPmtilesMeta(null);
+          setError(e instanceof Error ? e.message : 'Nu pot citi antetul PMTiles');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [file]);
 
   const isPMTiles = Boolean(file?.name.toLowerCase().endsWith('.pmtiles'));
@@ -114,7 +155,19 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
         ? { format: 'pmtiles' }
         : { format: 'image' };
 
-      if (isGeoTiff) {
+      if (isPMTiles) {
+        const pm = await readArchiveMetadata(file);
+        if (!pm.bounds) {
+          throw new Error('PMTiles fără bounds în antet — regenerează arhiva.');
+        }
+        const [minLon, minLat, maxLon, maxLat] = pm.bounds;
+        uploadBbox = { minLon, minLat, maxLon, maxLat };
+        metadata = {
+          format: 'pmtiles',
+          ...(pm.minzoom != null && { minzoom: pm.minzoom }),
+          ...(pm.maxzoom != null && { maxzoom: pm.maxzoom }),
+        };
+      } else if (isGeoTiff) {
         const preview = await buildRasterPreviewFromGeoTiff(file, {
           crsMode: geoTiffCrsMode,
         });
@@ -200,6 +253,21 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
           className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-700 file:bg-slate-800 file:text-slate-200"
         />
       </label>
+
+      {isPMTiles && pmtilesMeta && (
+        <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-2 text-[11px] text-slate-300 leading-snug">
+          <div>
+            <strong className="text-emerald-400">PMTiles OK</strong> — {pmtilesMeta.sizeMb.toFixed(1)} MB, zoom{' '}
+            {pmtilesMeta.minzoom ?? '?'}…{pmtilesMeta.maxzoom ?? '?'}, bounds WGS84:{' '}
+            {pmtilesMeta.bounds.map((v) => v.toFixed(4)).join(', ')}
+          </div>
+          <p className="mt-1 text-slate-500">
+            Randare doar în <strong className="text-slate-400">MapLibre</strong>: adaugă{' '}
+            <span className="font-mono text-slate-400">?maplibre=1</span> la URL dacă harta e Leaflet. Upload-ul poate
+            dura la fișiere mari (&gt;50 MB).
+          </p>
+        </div>
+      )}
 
       {isGeoTiff && (
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2">

@@ -69,10 +69,13 @@ export async function uploadRaster(input: UploadRasterInput): Promise<RasterOver
   const ext = (dotIdx >= 0 ? input.file.name.slice(dotIdx + 1) : 'png').toLowerCase();
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
 
+  const contentType =
+    input.file.type ||
+    (ext === 'pmtiles' ? 'application/vnd.pmtiles' : ext === 'webp' ? 'image/webp' : 'image/png');
   const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, input.file, {
     cacheControl: '3600',
     upsert: false,
-    contentType: input.file.type || 'image/png',
+    contentType,
   });
   if (upErr) throw upErr;
 
