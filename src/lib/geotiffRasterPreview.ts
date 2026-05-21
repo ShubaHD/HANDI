@@ -82,12 +82,24 @@ function hasNumericLength(v: unknown, minLen: number): boolean {
   return typeof len === 'number' && len >= minLen && Number.isFinite((v as { 0?: number })[0] as number);
 }
 
+/** True dacă geotiff.js poate calcula origin/resolution (sau tag-uri affine în IFD). */
 function geoTiffHasEmbeddedPixelToWorldTransform(image: GeoImage): boolean {
+  try {
+    const o = image.getOrigin();
+    const r = image.getResolution();
+    if (hasNumericLength(o, 2) && hasNumericLength(r, 2)) {
+      const sx = Number((r as ArrayLike<number>)[0]);
+      const sy = Number((r as ArrayLike<number>)[1]);
+      if (Number.isFinite(sx) && sx !== 0 && Number.isFinite(sy) && sy !== 0) return true;
+    }
+  } catch {
+    /* fallback la tag-uri brute */
+  }
   const fd = image.getFileDirectory();
   const mt = fd.getValue('ModelTransformation');
   if (hasNumericLength(mt, 16)) return true;
-  const tp = fd.getValue('ModelTiepoint');
-  const ps = fd.getValue('ModelPixelScale');
+  const tp = fd.getValue('ModelTiepoint') ?? fd.getValue('33922');
+  const ps = fd.getValue('ModelPixelScale') ?? fd.getValue('33550');
   return hasNumericLength(tp, 6) && hasNumericLength(ps, 2);
 }
 
