@@ -27,3 +27,10 @@ supabase/.temp
 # Build artifacts
 dev-dist
 *.tsbuildinfo
+
+# Raster local de test (GeoTIFF mari — nu în repo)
+*.tif
+*.tiff
+*.tif.ovr
+lidar/
+osgeo4w-setup.exe
