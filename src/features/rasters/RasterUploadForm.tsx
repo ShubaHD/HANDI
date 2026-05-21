@@ -115,18 +115,24 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
         : { format: 'image' };
 
       if (isGeoTiff) {
-        const { jpegBlob, bbox: bb } = await buildRasterPreviewFromGeoTiff(file, {
+        const preview = await buildRasterPreviewFromGeoTiff(file, {
           crsMode: geoTiffCrsMode,
         });
-        uploadFile = new File([jpegBlob], `${file.name.replace(/\.[^.]+$/, '') || 'raster'}-preview.jpg`, {
-          type: 'image/jpeg',
-        });
-        uploadBbox = bb;
+        uploadFile = new File(
+          [preview.previewBlob],
+          `${file.name.replace(/\.[^.]+$/, '') || 'raster'}-preview.${preview.fileExt}`,
+          { type: preview.mimeType },
+        );
+        uploadBbox = preview.bbox;
         metadata = {
           format: 'image',
           derivedFromGeoTiff: true,
           originalGeoTiffName: file.name,
           geoTiffCrsMode,
+          previewWidth: preview.previewSize.width,
+          previewHeight: preview.previewSize.height,
+          sourceWidth: preview.sourceSize.width,
+          sourceHeight: preview.sourceSize.height,
         };
       }
 
@@ -266,7 +272,9 @@ export function RasterUploadForm({ defaultBbox, onCreated, onCancel }: Props) {
             <strong className="text-slate-400">reîncarcă</strong> GeoTIFF-ul ca să se refacă limitele. Transformarea
             trebuie să fie <em>în</em> TIFF (tag-uri GeoTIFF); dacă ArcMap a lăsat doar un .tfw lângă fișier, browserul
             nu îl citește — folosește <strong className="text-slate-400">gdal_translate -of GTiff</strong> sau reexportă
-            cu georef încorporat.
+            cu georef încorporat. Preview-ul salvat are rezoluție limitată (implicit max{' '}
+            <strong className="text-slate-400">16384 px</strong> pe latura lungă); la zoom mare harta poate părea
+            încețoșată — pentru claritate la z16+ folosește <strong className="text-slate-400">PMTiles</strong>.
           </p>
         </div>
       )}

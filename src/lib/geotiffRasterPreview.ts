@@ -115,8 +115,42 @@ proj4.defs(
   '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +k=1 +x_0=0 +y_0=0 +units=m +no_defs',
 );
 
-const PREVIEW_MAX = 2048;
-const JPEG_QUALITY = 0.86;
+/** Lungimea maximă (px) a laturii lungi la preview (ortofoto z16 ≈ 8192; surse mari pot folosi 16384). */
+const PREVIEW_MAX = Math.min(
+  16384,
+  Math.max(2048, Number(import.meta.env.VITE_GEOTIFF_PREVIEW_MAX) || 16384),
+);
+const PREVIEW_QUALITY = Math.min(
+  1,
+  Math.max(
+    0.5,
+    Number(import.meta.env.VITE_GEOTIFF_JPEG_QUALITY ?? import.meta.env.VITE_GEOTIFF_PREVIEW_QUALITY) ||
+      0.95,
+  ),
+);
+
+let webpEncodeSupported: boolean | null = null;
+
+async function canvasToPreviewBlob(canvas: HTMLCanvasElement): Promise<{
+  blob: Blob;
+  mimeType: 'image/webp' | 'image/jpeg';
+  fileExt: 'webp' | 'jpg';
+}> {
+  if (webpEncodeSupported == null) {
+    webpEncodeSupported = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b?.type === 'image/webp'), 'image/webp', PREVIEW_QUALITY);
+    });
+  }
+  const mime: 'image/webp' | 'image/jpeg' = webpEncodeSupported ? 'image/webp' : 'image/jpeg';
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Nu pot encoda preview raster.'))),
+      mime,
+      PREVIEW_QUALITY,
+    );
+  });
+  return { blob, mimeType: mime, fileExt: webpEncodeSupported ? 'webp' : 'jpg' };
+}
 
 function citationGeoKeysBlob(gk: Partial<Record<string, unknown>>): string {
   const keys = ['PCSCitationGeoKey', 'GeogCitationGeoKey', 'GTCitationGeoKey'] as const;
@@ -399,8 +433,12 @@ export async function buildRasterPreviewFromGeoTiff(
   file: File,
   opts?: { crsMode?: GeoTiffCrsMode },
 ): Promise<{
-  jpegBlob: Blob;
+  previewBlob: Blob;
+  mimeType: 'image/webp' | 'image/jpeg';
+  fileExt: 'webp' | 'jpg';
   bbox: BBox;
+  previewSize: { width: number; height: number };
+  sourceSize: { width: number; height: number };
 }> {
   const crsMode = opts?.crsMode ?? 'auto';
   const tiff = await fromBlob(file);
@@ -412,6 +450,11 @@ export async function buildRasterPreviewFromGeoTiff(
     const scale = Math.min(1, PREVIEW_MAX / Math.max(iw, ih));
     const outW = Math.max(1, Math.round(iw * scale));
     const outH = Math.max(1, Math.round(ih * scale));
+    if (scale < 1) {
+      console.info(
+        `[Handi GeoTIFF] Preview ${outW}×${outH} px (sursă ${iw}×${ih}, max latura ${PREVIEW_MAX}). Reîncarcă după creșterea VITE_GEOTIFF_PREVIEW_MAX dacă e nevoie.`,
+      );
+    }
 
     const fromCrs = resolveCrsForBBox(image, crsMode);
     const [minX, minY, maxX, maxY] = getProjectedBoundingBox(image);
@@ -466,15 +509,16 @@ export async function buildRasterPreviewFromGeoTiff(
     if (!ctx) throw new Error('Canvas 2D indisponibil.');
     ctx.putImageData(imageData, 0, 0);
 
-    const jpegBlob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('Nu pot encoda JPEG.'))),
-        'image/jpeg',
-        JPEG_QUALITY,
-      );
-    });
+    const { blob: previewBlob, mimeType, fileExt } = await canvasToPreviewBlob(canvas);
 
-    return { jpegBlob, bbox };
+    return {
+      previewBlob,
+      mimeType,
+      fileExt,
+      bbox,
+      previewSize: { width: outW, height: outH },
+      sourceSize: { width: iw, height: ih },
+    };
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     if (m.includes('does not have an affine transformation')) {
