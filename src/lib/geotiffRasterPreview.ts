@@ -364,6 +364,33 @@ function interleavedToImageData(
   return new ImageData(rgba, w, h);
 }
 
+/** readRGB returnează RGB (3×px); ImageData cere RGBA (4×px) — altfel culorile se strică. */
+function rgbOrRgbaBufferToImageData(
+  data: Uint8Array | Uint8ClampedArray,
+  w: number,
+  h: number,
+): ImageData {
+  const px = w * h;
+  const rgba = new Uint8ClampedArray(px * 4);
+  if (data.length === px * 4) {
+    rgba.set(data);
+  } else if (data.length === px * 3) {
+    for (let i = 0; i < px; i++) {
+      const s = i * 3;
+      const o = i * 4;
+      rgba[o] = data[s]!;
+      rgba[o + 1] = data[s + 1]!;
+      rgba[o + 2] = data[s + 2]!;
+      rgba[o + 3] = 255;
+    }
+  } else {
+    throw new Error(
+      `GeoTIFF preview: buffer ${data.length} bytes, așteptat ${px * 3} (RGB) sau ${px * 4} (RGBA).`,
+    );
+  }
+  return new ImageData(rgba, w, h);
+}
+
 /**
  * Construiește un JPEG georeferențiat (bbox WGS84) din GeoTIFF, pentru overlay ImageSource.
  * Folosește citiri parțiale (blob slice) — poate procesa și fișiere mari, dar durează la primul decode.
@@ -402,9 +429,7 @@ export async function buildRasterPreviewFromGeoTiff(
         resampleMethod: 'bilinear',
       });
       const data = rgb as Uint8Array & { width: number; height: number };
-      const copy = new Uint8ClampedArray(data.length);
-      copy.set(data);
-      imageData = new ImageData(copy, data.width, data.height);
+      imageData = rgbOrRgbaBufferToImageData(data, data.width, data.height);
     } catch {
       const bands = await image.readRasters({
         width: outW,
@@ -420,13 +445,15 @@ export async function buildRasterPreviewFromGeoTiff(
       if (b0 instanceof Float32Array || b0 instanceof Float64Array) {
         imageData = floatBandToImageData(b0, w, h, nodata);
       } else if (arr.length >= 3) {
-        const inter = new Uint8Array(w * h * 3);
+        const samples = arr.length >= 4 ? 4 : 3;
+        const inter = new Uint8Array(w * h * samples);
         for (let i = 0; i < w * h; i++) {
-          inter[i * 3] = Number(arr[0][i]) <= 255 ? Number(arr[0][i]) : Math.round(Number(arr[0][i]) / 257);
-          inter[i * 3 + 1] = Number(arr[1][i]) <= 255 ? Number(arr[1][i]) : Math.round(Number(arr[1][i]) / 257);
-          inter[i * 3 + 2] = Number(arr[2][i]) <= 255 ? Number(arr[2][i]) : Math.round(Number(arr[2][i]) / 257);
+          for (let c = 0; c < samples; c++) {
+            const v = Number(arr[c]![i]);
+            inter[i * samples + c] = v <= 255 ? v : Math.round(v / 257);
+          }
         }
-        imageData = interleavedToImageData(inter, w, h, 3);
+        imageData = interleavedToImageData(inter, w, h, samples);
       } else {
         imageData = interleavedToImageData(arr[0] as Uint16Array, w, h, 1);
       }
