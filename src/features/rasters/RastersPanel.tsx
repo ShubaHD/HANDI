@@ -226,9 +226,23 @@ export function RastersPanel({
                     </div>
                   )}
                   {pmtilesMaplibreHint && isPmtilesRaster[r.id] && (
-                    <div className="mt-1 ml-5 text-[10px] leading-snug text-slate-500">
-                      PMTiles pe hartă: adaugă manual <span className="font-mono text-slate-400">?maplibre=1</span> la URL
-                      (sau scoate <span className="font-mono">?leaflet=1</span>).
+                    <div className="mt-1 ml-5 text-[10px] leading-snug text-amber-200/90 space-y-1">
+                      <p>
+                        PMTiles nu apare pe Leaflet. Folosește MapLibre (
+                        <span className="font-mono text-slate-400">?maplibre=1</span>).
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const u = new URL(window.location.href);
+                          u.searchParams.set('maplibre', '1');
+                          u.searchParams.delete('leaflet');
+                          window.location.assign(u.toString());
+                        }}
+                        className="text-xs px-2 py-1 rounded bg-amber-700/80 hover:bg-amber-600 text-white"
+                      >
+                        Activează MapLibre
+                      </button>
                     </div>
                   )}
                   {isOn && (

@@ -212,8 +212,8 @@ export function MapView({
   const forceMaplibre = Boolean(maplibreQs?.has('maplibre'));
   const basemapNeedsMapLibre =
     !basemapReady || isOfflineRasterBasemapBase(base);
-  /** Leaflet implicit; MapLibre forțat cu ?maplibre=1 sau când basemap-ul e PMTiles (offline). */
-  const useLeaflet = !basemapNeedsMapLibre && (forceLeaflet || !forceMaplibre);
+  /** MapLibre implicit (PMTiles, CAD, raster tiles). Leaflet doar cu ?leaflet=1. */
+  const useLeaflet = !basemapNeedsMapLibre && forceLeaflet && !forceMaplibre;
 
   const clearHover = () => {
     if (hoverTimerRef.current) {

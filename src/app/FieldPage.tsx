@@ -634,7 +634,8 @@ export default function FieldPage() {
                   const qs = new URLSearchParams(window.location.search);
                   const forceLeaflet = Boolean(qs.has('leaflet'));
                   const forceMaplibre = Boolean(qs.has('maplibre'));
-                  const renderer: 'maplibre' | 'leaflet' = forceLeaflet || !forceMaplibre ? 'leaflet' : 'maplibre';
+                  const renderer: 'maplibre' | 'leaflet' =
+                    forceLeaflet && !forceMaplibre ? 'leaflet' : 'maplibre';
 
                   const pmtilesRasters = rasters
                     .filter((r) => rasterVisible.has(r.id) && isRasterPmtilesOverlay(r))
@@ -1147,7 +1148,20 @@ export default function FieldPage() {
                   const isPMTiles = Boolean(r && isRasterPmtilesOverlay(r) && pmUrl);
 
                   // When enabling, also read PMTiles header to set correct min/max zoom (many archives are z16-only).
+                  if (enabling && isPMTiles && !pmUrl && r && isRasterPmtilesOverlay(r)) {
+                    setError(
+                      'PMTiles: apasă „Actualizează offline” (copie locală) sau reîncarcă pagina după upload în Supabase.',
+                    );
+                  }
+
                   if (enabling && isPMTiles && pmUrl) {
+                    if (shouldSuggestPmtilesMaplibreUrlHint()) {
+                      const u = new URL(window.location.href);
+                      u.searchParams.set('maplibre', '1');
+                      u.searchParams.delete('leaflet');
+                      window.location.assign(u.toString());
+                      return;
+                    }
                     void (async () => {
                       try {
                         const arch = new PMTiles(pmUrl);
