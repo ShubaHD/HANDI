@@ -342,13 +342,6 @@ export function LeafletView({
     if (group.getLayers().length > 0) {
       group.addTo(map);
       layersRef.current.rasters = group;
-      // Ortofoto sub CAD / puncte / zone (efectul raster poate rula după celelalte straturi).
-      for (const key of ['zones', 'tracks', 'points', 'annotations', 'cad'] as const) {
-        const layer = layersRef.current[key];
-        if (layer && 'bringToFront' in layer && typeof layer.bringToFront === 'function') {
-          layer.bringToFront();
-        }
-      }
     }
 
     return () => {
