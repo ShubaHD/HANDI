@@ -1,5 +1,6 @@
 import type { Map as MlMap } from 'maplibre-gl';
 import type { RasterOverlay } from '@/lib/types';
+import { beforeIdForRasterOverlay, ensureRasterLayerBelowVectors } from '@/map/mapLayerStack';
 import { mapAcceptsOverlayLayers } from '@/map/mapOverlayReadiness';
 import { isRasterPmtilesOverlay, publicUrl, rasterCornersFromBounds } from '@/features/rasters/api';
 
@@ -96,18 +97,23 @@ export function syncRasterLayers(
       }
     }
 
+    const beforeId = beforeIdForRasterOverlay(map);
     if (!map.getLayer(lyrId)) {
-      map.addLayer({
-        id: lyrId,
-        type: 'raster',
-        source: srcId,
-        paint: {
-          'raster-opacity': opacity,
-          'raster-fade-duration': 200,
+      map.addLayer(
+        {
+          id: lyrId,
+          type: 'raster',
+          source: srcId,
+          paint: {
+            'raster-opacity': opacity,
+            'raster-fade-duration': 200,
+          },
         },
-      });
+        beforeId,
+      );
     } else {
       map.setPaintProperty(lyrId, 'raster-opacity', opacity);
+      ensureRasterLayerBelowVectors(map, lyrId);
     }
   }
 }

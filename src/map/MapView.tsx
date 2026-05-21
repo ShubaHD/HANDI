@@ -365,6 +365,7 @@ export function MapView({
     addHillshadeOverlay(map);
     setHillshadeVisible(map, hillshadeOn);
     setHillshadeOpacity(map, hillshadeStrength);
+    syncRasterLayers(map, rasters, rasterState);
     addZonesLayer(map);
     addTracksLayer(map);
     addPointsLayer(map);
@@ -374,7 +375,6 @@ export function MapView({
     updateTracksLayer(map, tracks);
     updateAnnotationsLayer(map, annotations);
     updateLiveTrack(map, liveTrack);
-    syncRasterLayers(map, rasters, rasterState);
     updateCadLayersOnMap(map, cadLayers);
   };
 
